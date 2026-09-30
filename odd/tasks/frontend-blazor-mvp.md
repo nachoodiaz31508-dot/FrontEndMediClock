@@ -24,11 +24,12 @@ Out of scope: auth, multi-usuario, ESP firmware, cambios backend.
 - CORS * sin auth, JSON camelCase
 - fechaHora la pone el server, no enviar
 - Linux Mint 22.3, git ok, dotnet SDK 8 requerido
+- Convencion instituto: codigo dominio en español neutro (nombres, declaraciones, comentarios) como el back, ordenado y facil de entender. Explicacion didactica simple en cada paso.
 
 ## Tasks
 - [x] T1: Instalar SDK .NET 8 y verificar `dotnet --version`
 - [x] T2: Andamiar Blazor WASM en ./ (net8.0) y `dotnet build` verde
-- [ ] T3: Modelos DTO + ApiClient con BASE_URL configurable + selector dispositivos
+- [x] T3: Modelos DTO + ApiClient con BASE_URL configurable + selector dispositivos
 - [ ] T4: UI estado + CRUD alarmas con validacion client-side
 - [ ] T5: UI historial eventos con paginacion + manejo errores
 - [x] T6: Crear repo privado FrontEndMediClock, commit inicial y push
@@ -57,9 +58,10 @@ Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sis
 - `dotnet build`: Compilacion correcta, 0 Advertencia(s), 0 Errores (16.93s)
 - `git log --oneline -1`: 09f74a3 feat: bootstrap blazor wasm frontend
 - `gh repo view --json name,visibility,url`: pendiente re-verificacion (repo creado via `gh repo create FrontEndMediClock --private --source=. --push` -> https://github.com/nachoodiaz31508-dot/FrontEndMediClock)
+- T3 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 13.48s). Smoke: `dotnet run` sirve index 200 y appsettings.json con BaseUrl; GET real `api/dispositivos/1/configuracion` devuelve ESP_32_Prueba con 1 alarma. Commit `feat: modelos y cliente api con selector` pusheado a main.
 
 ## Next step
-- Ejecutar T1-T2-T6 via writer unico, luego T3-T5.
+- T3 done. Sigue T4 (UI estado + CRUD alarmas).
 
 ## Route declaration
 - Route: delegated direct (mapping trigger ya usado para backend 14 endpoints; writer trigger: 2+ files scaffold). No SDD.

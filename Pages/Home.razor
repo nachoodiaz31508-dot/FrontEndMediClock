@@ -1,7 +1,75 @@
 ﻿@page "/"
+@using FrontEndMediClock.Componentes
+@using FrontEndMediClock.Modelos
+@using FrontEndMediClock.Servicios
+@inject ApiMediClock Api
+@inject EstadoDispositivo Estado
+@implements IDisposable
 
-<PageTitle>Home</PageTitle>
+<PageTitle>MediClock</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>MediClock</h1>
 
-Welcome to your new app.
+<SelectorDispositivo />
+
+@if (cargando)
+{
+    <p>Cargando configuracion...</p>
+}
+else if (error is not null)
+{
+    <p style="color:red">@error</p>
+}
+else if (config is not null)
+{
+    @* Prueba T3: muestra la configuracion real en texto simple. T4 la convertira en UI completa. *@
+    <p>Dispositivo: @config.nombre (id=@config.dispositivoId)</p>
+    <p>Alarmas: @config.alarmas.Count</p>
+    <ul>
+        @foreach (var a in config.alarmas)
+        {
+            <li>Alarma @a.alarmaId: dia @a.diaSemana, numero @a.numeroAlarma, hora @a.hora</li>
+        }
+    </ul>
+}
+
+@code {
+    private ConfiguracionDispositivo? config;
+    private bool cargando = true;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Estado.Cambio += AlCambiarDispositivo;
+        await Cargar();
+    }
+
+    private async void AlCambiarDispositivo()
+    {
+        await Cargar();
+        StateHasChanged();
+    }
+
+    private async Task Cargar()
+    {
+        cargando = true;
+        error = null;
+        try
+        {
+            config = await Api.ObtenerConfiguracion(Estado.DispositivoId);
+        }
+        catch (ExcepcionApi ex)
+        {
+            error = string.Join(" ", ex.Mensajes);
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Estado.Cambio -= AlCambiarDispositivo;
+    }
+}

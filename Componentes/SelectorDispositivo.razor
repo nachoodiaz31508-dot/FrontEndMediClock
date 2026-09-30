@@ -1,0 +1,63 @@
+@using FrontEndMediClock.Modelos
+@using FrontEndMediClock.Servicios
+@inject ApiMediClock Api
+@inject EstadoDispositivo Estado
+
+@* Selector minimo de dispositivo: lista real del backend y guarda la
+   seleccion en EstadoDispositivo para que T4/T5 la reutilicen. *@
+
+@if (cargando)
+{
+    <p>Cargando dispositivos...</p>
+}
+else if (error is not null)
+{
+    <p style="color:red">@error</p>
+}
+else
+{
+    <label>
+        Dispositivo:
+        <select value="@Estado.DispositivoId" @onchange="AlCambiar">
+            @foreach (var d in dispositivos)
+            {
+                <option value="@d.dispositivoId">@d.nombre (id=@d.dispositivoId)</option>
+            }
+        </select>
+    </label>
+}
+
+@code {
+    private List<Dispositivo> dispositivos = new();
+    private bool cargando = true;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            dispositivos = await Api.ListarDispositivos();
+            // Si el default (id=1) no existe en la lista, se usa el primero.
+            if (dispositivos.Count > 0 && dispositivos.All(d => d.dispositivoId != Estado.DispositivoId))
+            {
+                Estado.Seleccionar(dispositivos[0].dispositivoId);
+            }
+        }
+        catch (ExcepcionApi ex)
+        {
+            error = string.Join(" ", ex.Mensajes);
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void AlCambiar(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            Estado.Seleccionar(id);
+        }
+    }
+}
