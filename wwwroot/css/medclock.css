@@ -1,0 +1,140 @@
+@* Paleta MediClock: azul marino para header y botones primarios,
+   celeste y teal como acentos, fondo claro y texto oscuro.
+   El archivo del logo se agregara a wwwroot cuando el usuario lo suba. *@
+
+body {
+    background-color: #f4f7fb;
+    color: #1e293b;
+}
+
+.mc-selector {
+    background-color: #ffffff;
+    border: 1px solid #dbe5f1;
+    border-left: 4px solid #29b6d1;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.mc-tarjetas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.mc-tarjeta {
+    flex: 1 1 200px;
+    background-color: #ffffff;
+    border: 1px solid #dbe5f1;
+    border-top: 4px solid #0f2f5b;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mc-tarjeta-acento {
+    border-top-color: #14a3a3;
+}
+
+.mc-tarjeta-titulo {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.mc-detalle {
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.mc-lista {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mc-item {
+    background-color: #ffffff;
+    border: 1px solid #dbe5f1;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.mc-acciones {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.mc-campo {
+    margin-bottom: 0.75rem;
+}
+
+.mc-campo label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-width: 320px;
+}
+
+.mc-campo input {
+    border: 1px solid #94a3b8;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+}
+
+.mc-boton {
+    border-radius: 6px;
+    border: 1px solid transparent;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+}
+
+.mc-boton-primario {
+    background-color: #0f2f5b;
+    border-color: #0f2f5b;
+    color: #ffffff;
+}
+
+.mc-boton-secundario {
+    background-color: #ffffff;
+    border-color: #29b6d1;
+    color: #0f2f5b;
+}
+
+.mc-boton-peligro {
+    background-color: #ffffff;
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.mc-confirmar {
+    background-color: #fef2f2;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-top: 0.75rem;
+}
+
+.mc-exito {
+    background-color: #ecfdf5;
+    border: 1px solid #14a3a3;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+}
+
+.mc-error {
+    background-color: #fef2f2;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+}

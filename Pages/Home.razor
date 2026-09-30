@@ -6,37 +6,156 @@
 @inject EstadoDispositivo Estado
 @implements IDisposable
 
-<PageTitle>MediClock</PageTitle>
+<PageTitle>MediClock - Alarmas</PageTitle>
 
-<h1>MediClock</h1>
+@* Pantalla principal T4: estado del dispositivo y CRUD de alarmas.
+   El backend es la fuente de verdad: despues de cada cambio
+   se recarga la configuracion completa. *@
 
-<SelectorDispositivo />
+<h1>Alarmas del pastillero</h1>
+
+<section class="mc-selector">
+    <SelectorDispositivo />
+</section>
 
 @if (cargando)
 {
     <p>Cargando configuracion...</p>
 }
-else if (error is not null)
+else if (errorGeneral is not null)
 {
-    <p style="color:red">@error</p>
+    <p class="mc-error">@errorGeneral</p>
+    <button class="mc-boton mc-boton-secundario" @onclick="Cargar">Reintentar</button>
 }
 else if (config is not null)
 {
-    @* Prueba T3: muestra la configuracion real en texto simple. T4 la convertira en UI completa. *@
-    <p>Dispositivo: @config.nombre (id=@config.dispositivoId)</p>
-    <p>Alarmas: @config.alarmas.Count</p>
-    <ul>
-        @foreach (var a in config.alarmas)
+    @* Tarjetas de estado: dispositivo actual, cantidad y proxima alarma. *@
+    <section class="mc-tarjetas">
+        <div class="mc-tarjeta">
+            <span class="mc-tarjeta-titulo">Dispositivo</span>
+            <strong>@config.nombre</strong>
+            <span class="mc-detalle">id=@config.dispositivoId</span>
+        </div>
+        <div class="mc-tarjeta mc-tarjeta-acento">
+            <span class="mc-tarjeta-titulo">Cantidad de alarmas</span>
+            <strong>@config.alarmas.Count</strong>
+        </div>
+        <div class="mc-tarjeta mc-tarjeta-acento">
+            <span class="mc-tarjeta-titulo">Proxima alarma</span>
+            @if (ProximaAlarma() is Alarma proxima)
+            {
+                <strong>Dia @proxima.diaSemana, nro @proxima.numeroAlarma</strong>
+                <span class="mc-detalle">@proxima.hora</span>
+            }
+            else
+            {
+                <strong>Sin alarmas</strong>
+                <span class="mc-detalle">Cree la primera abajo</span>
+            }
+        </div>
+    </section>
+
+    @if (mensajeExito is not null)
+    {
+        <p class="mc-exito">@mensajeExito</p>
+    }
+    @if (mensajeError is not null)
+    {
+        <p class="mc-error">@mensajeError</p>
+    }
+
+    @* Lista ordenada por dia y numero para facilitar la lectura semanal. *@
+    <section>
+        <h2>Lista de alarmas</h2>
+        @if (AlarmasOrdenadas().Count == 0)
         {
-            <li>Alarma @a.alarmaId: dia @a.diaSemana, numero @a.numeroAlarma, hora @a.hora</li>
+            <p>Todavia no hay alarmas para este dispositivo.</p>
         }
-    </ul>
+        else
+        {
+            <ul class="mc-lista">
+                @foreach (var alarma in AlarmasOrdenadas())
+                {
+                    <li class="mc-item">
+                        <span>
+                            <strong>Dia @alarma.diaSemana</strong>
+                            · nro @alarma.numeroAlarma
+                            · @alarma.hora
+                        </span>
+                        <span class="mc-acciones">
+                            <button class="mc-boton mc-boton-secundario" @onclick="() => EmpezarEdicion(alarma)">Editar</button>
+                            <button class="mc-boton mc-boton-peligro" @onclick="() => PedirConfirmacion(alarma)">Borrar</button>
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @* Confirmacion en dos pasos antes de borrar: evita toques accidentales. *@
+        @if (alarmaABorrar is not null)
+        {
+            <div class="mc-confirmar">
+                <p>¿Borrar la alarma del dia @alarmaABorrar.diaSemana, nro @alarmaABorrar.numeroAlarma (@alarmaABorrar.hora)?</p>
+                <button class="mc-boton mc-boton-peligro" @onclick="ConfirmarBorrado">Si, borrar</button>
+                <button class="mc-boton mc-boton-secundario" @onclick="CancelarBorrado">Cancelar</button>
+            </div>
+        }
+    </section>
+
+    @* Formulario compartido para crear y editar. La validacion
+       client-side evita viajes al servidor con datos invalidos. *@
+    <section>
+        <h2>@(editandoId is null ? "Crear alarma" : "Editar alarma")</h2>
+        <EditForm Model="formulario" OnValidSubmit="Guardar">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="mc-campo">
+                <label>
+                    Dia de semana (1 a 7):
+                    <InputNumber @bind-Value="formulario.diaSemana" min="1" max="7" />
+                </label>
+                <ValidationMessage For="() => formulario.diaSemana" />
+            </div>
+            <div class="mc-campo">
+                <label>
+                    Numero de alarma (1 a 3):
+                    <InputNumber @bind-Value="formulario.numeroAlarma" min="1" max="3" />
+                </label>
+                <ValidationMessage For="() => formulario.numeroAlarma" />
+            </div>
+            <div class="mc-campo">
+                <label>
+                    Hora (HH:mm:ss):
+                    <InputText @bind-Value="formulario.hora" placeholder="08:00:00" />
+                </label>
+                <ValidationMessage For="() => formulario.hora" />
+            </div>
+            @if (errorFormulario is not null)
+            {
+                <p class="mc-error">@errorFormulario</p>
+            }
+            <button type="submit" class="mc-boton mc-boton-primario" disabled="@guardando">
+                @(guardando ? "Guardando..." : editandoId is null ? "Crear alarma" : "Guardar cambios")
+            </button>
+            @if (editandoId is not null)
+            {
+                <button type="button" class="mc-boton mc-boton-secundario" @onclick="CancelarEdicion">Cancelar</button>
+            }
+        </EditForm>
+    </section>
 }
 
 @code {
     private ConfiguracionDispositivo? config;
     private bool cargando = true;
-    private string? error;
+    private bool guardando = false;
+    private string? errorGeneral;
+    private string? mensajeExito;
+    private string? mensajeError;
+    private string? errorFormulario;
+    private Alarma formulario = NuevaAlarmaVacia();
+    private int? editandoId;
+    private Alarma? alarmaABorrar;
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,18 +172,169 @@ else if (config is not null)
     private async Task Cargar()
     {
         cargando = true;
-        error = null;
+        errorGeneral = null;
         try
         {
             config = await Api.ObtenerConfiguracion(Estado.DispositivoId);
         }
         catch (ExcepcionApi ex)
         {
-            error = string.Join(" ", ex.Mensajes);
+            errorGeneral = string.Join(" ", ex.Mensajes);
         }
         finally
         {
             cargando = false;
+        }
+    }
+
+    private static Alarma NuevaAlarmaVacia() => new() { diaSemana = 1, numeroAlarma = 1, hora = "08:00:00" };
+
+    private List<Alarma> AlarmasOrdenadas() =>
+        config?.alarmas.OrderBy(a => a.diaSemana).ThenBy(a => a.numeroAlarma).ToList() ?? new();
+
+    // Proxima alarma semanal: la mas cercana desde hoy y la hora actual.
+    // Usa la convencion del modelo (dia 1 = domingo, igual que DayOfWeek + 1).
+    private Alarma? ProximaAlarma()
+    {
+        if (config is null || config.alarmas.Count == 0)
+        {
+            return null;
+        }
+
+        var hoy = (int)DateTime.Today.DayOfWeek + 1;
+        var ahora = DateTime.Now.TimeOfDay;
+        return config.alarmas
+            .OrderBy(a =>
+            {
+                var distancia = (a.diaSemana - hoy + 7) % 7;
+                // Si es hoy pero su hora ya paso, corresponde a la semana proxima.
+                if (distancia == 0
+                    && TimeSpan.TryParse(a.hora, out var hora)
+                    && hora <= ahora)
+                {
+                    distancia = 7;
+                }
+
+                return distancia;
+            })
+            .ThenBy(a => a.hora)
+            .First();
+    }
+
+    private void EmpezarEdicion(Alarma alarma)
+    {
+        editandoId = alarma.alarmaId;
+        alarmaABorrar = null;
+        mensajeExito = null;
+        mensajeError = null;
+        errorFormulario = null;
+        formulario = new Alarma
+        {
+            diaSemana = alarma.diaSemana,
+            numeroAlarma = alarma.numeroAlarma,
+            hora = alarma.hora,
+        };
+    }
+
+    private void CancelarEdicion()
+    {
+        editandoId = null;
+        errorFormulario = null;
+        formulario = NuevaAlarmaVacia();
+    }
+
+    private void PedirConfirmacion(Alarma alarma)
+    {
+        alarmaABorrar = alarma;
+        mensajeExito = null;
+        mensajeError = null;
+    }
+
+    private void CancelarBorrado()
+    {
+        alarmaABorrar = null;
+    }
+
+    // Guarda con validacion client-side previa: rango valido y sin
+    // duplicar dia y numero, para evitar el 400 y el 409 del servidor.
+    private async Task Guardar()
+    {
+        mensajeExito = null;
+        mensajeError = null;
+        errorFormulario = null;
+
+        if (config is null)
+        {
+            return;
+        }
+
+        var duplicada = config.alarmas.Any(a =>
+            a.diaSemana == formulario.diaSemana
+            && a.numeroAlarma == formulario.numeroAlarma
+            && a.alarmaId != editandoId);
+        if (duplicada)
+        {
+            errorFormulario = $"Ya existe la alarma {formulario.numeroAlarma} para el dia {formulario.diaSemana}. Elija otro dia o numero.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            if (editandoId is int id)
+            {
+                await Api.ActualizarAlarma(Estado.DispositivoId, id, formulario);
+                mensajeExito = "Alarma actualizada correctamente.";
+            }
+            else
+            {
+                await Api.CrearAlarma(Estado.DispositivoId, formulario);
+                mensajeExito = "Alarma creada correctamente.";
+            }
+
+            CancelarEdicion();
+            await Cargar();
+        }
+        catch (ExcepcionApi ex) when (ex.Codigo == 409)
+        {
+            errorFormulario = "Esa combinacion de dia y numero ya esta ocupada. " + string.Join(" ", ex.Mensajes);
+        }
+        catch (ExcepcionApi ex)
+        {
+            errorFormulario = string.Join(" ", ex.Mensajes);
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task ConfirmarBorrado()
+    {
+        if (alarmaABorrar is null)
+        {
+            return;
+        }
+
+        mensajeExito = null;
+        mensajeError = null;
+        try
+        {
+            await Api.EliminarAlarma(Estado.DispositivoId, alarmaABorrar.alarmaId);
+            mensajeExito = "Alarma borrada correctamente.";
+            alarmaABorrar = null;
+            await Cargar();
+        }
+        catch (ExcepcionApi ex) when (ex.Codigo == 409)
+        {
+            // El servidor protege las alarmas con eventos registrados.
+            mensajeError = "No se puede borrar esta alarma porque ya tiene eventos registrados. " + string.Join(" ", ex.Mensajes);
+            alarmaABorrar = null;
+        }
+        catch (ExcepcionApi ex)
+        {
+            mensajeError = string.Join(" ", ex.Mensajes);
+            alarmaABorrar = null;
         }
     }
 

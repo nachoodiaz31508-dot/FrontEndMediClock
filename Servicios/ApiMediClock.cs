@@ -40,6 +40,45 @@ public class ApiMediClock
         return await respuesta.Content.ReadFromJsonAsync<List<Alarma>>() ?? new();
     }
 
+    // POST /api/dispositivos/{id}/alarmas con { diaSemana, numeroAlarma, hora }.
+    // Devuelve la alarma creada. 409 si ya existe ese dia y numero.
+    public async Task<Alarma> CrearAlarma(int id, Alarma datos)
+    {
+        var respuesta = await _http.PostAsJsonAsync(
+            $"api/dispositivos/{id}/alarmas",
+            new { datos.diaSemana, datos.numeroAlarma, datos.hora });
+        await ValidarRespuesta(respuesta, "No se pudo crear la alarma.");
+        return await respuesta.Content.ReadFromJsonAsync<Alarma>()
+            ?? throw new ExcepcionApi((int)respuesta.StatusCode, new() { "El servidor devolvio una alarma vacia." });
+    }
+
+    // PUT /api/dispositivos/{id}/alarmas/{alarmaId} con { diaSemana, numeroAlarma, hora }.
+    // Devuelve la alarma actualizada. 409 si choca con otra existente.
+    public async Task<Alarma> ActualizarAlarma(int id, int alarmaId, Alarma datos)
+    {
+        var respuesta = await _http.PutAsJsonAsync(
+            $"api/dispositivos/{id}/alarmas/{alarmaId}",
+            new { datos.diaSemana, datos.numeroAlarma, datos.hora });
+        await ValidarRespuesta(respuesta, "No se pudo actualizar la alarma.");
+        return await respuesta.Content.ReadFromJsonAsync<Alarma>()
+            ?? new Alarma
+            {
+                alarmaId = alarmaId,
+                diaSemana = datos.diaSemana,
+                numeroAlarma = datos.numeroAlarma,
+                hora = datos.hora,
+                dispositivoId = id,
+            };
+    }
+
+    // DELETE /api/dispositivos/{id}/alarmas/{alarmaId} (204 sin contenido).
+    // 409 si la alarma tiene eventos registrados y no se puede borrar.
+    public async Task EliminarAlarma(int id, int alarmaId)
+    {
+        var respuesta = await _http.DeleteAsync($"api/dispositivos/{id}/alarmas/{alarmaId}");
+        await ValidarRespuesta(respuesta, "No se pudo borrar la alarma.");
+    }
+
     // GET /api/dispositivos/{id}/eventos?pagina=&tamanioPagina=
     // La paginacion la aplica el servidor (pagina desde 1).
     public async Task<List<Evento>> ListarEventos(int id, int pagina = 1, int tamanioPagina = 10)
@@ -73,7 +112,39 @@ public class ApiMediClock
         try
         {
             var mensajes = await respuesta.Content.ReadFromJsonAsync<List<string>>();
-            return mensajes ?? new();
+            if (mensajes is { Count: > 0 })
+            {
+                return mensajes;
+            }
+        }
+        catch
+        {
+            // No era un string[]: se intenta leer como detalle de problema.
+        }
+
+        // El backend devuelve 400 con formato detalle de problema
+        // ({ errors: { Campo: [mensajes] } }); se extraen esos textos.
+        try
+        {
+            using var documento = await respuesta.Content.ReadFromJsonAsync<System.Text.Json.JsonDocument>();
+            var textos = new List<string>();
+            if (documento is not null
+                && documento.RootElement.TryGetProperty("errors", out var errores)
+                && errores.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var campo in errores.EnumerateObject())
+                {
+                    foreach (var texto in campo.Value.EnumerateArray())
+                    {
+                        if (texto.GetString() is string mensaje)
+                        {
+                            textos.Add(mensaje);
+                        }
+                    }
+                }
+            }
+
+            return textos;
         }
         catch
         {

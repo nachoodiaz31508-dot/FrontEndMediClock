@@ -30,7 +30,7 @@ Out of scope: auth, multi-usuario, ESP firmware, cambios backend.
 - [x] T1: Instalar SDK .NET 8 y verificar `dotnet --version`
 - [x] T2: Andamiar Blazor WASM en ./ (net8.0) y `dotnet build` verde
 - [x] T3: Modelos DTO + ApiClient con BASE_URL configurable + selector dispositivos
-- [ ] T4: UI estado + CRUD alarmas con validacion client-side
+- [x] T4: UI estado + CRUD alarmas con validacion client-side
 - [ ] T5: UI historial eventos con paginacion + manejo errores
 - [x] T6: Crear repo privado FrontEndMediClock, commit inicial y push
 
@@ -59,9 +59,10 @@ Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sis
 - `git log --oneline -1`: 09f74a3 feat: bootstrap blazor wasm frontend
 - `gh repo view --json name,visibility,url`: pendiente re-verificacion (repo creado via `gh repo create FrontEndMediClock --private --source=. --push` -> https://github.com/nachoodiaz31508-dot/FrontEndMediClock)
 - T3 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 13.48s). Smoke: `dotnet run` sirve index 200 y appsettings.json con BaseUrl; GET real `api/dispositivos/1/configuracion` devuelve ESP_32_Prueba con 1 alarma. Commit `feat: modelos y cliente api con selector` pusheado a main.
+- T4 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 15.23s). Rutas CRUD verificadas contra prod: POST `api/dispositivos/1/alarmas` -> 201, PUT `.../alarmas/2` -> 200, GET una -> 200, DELETE -> 204, lista final intacta (1 alarma). Duplicado -> 409 string[] amable; dia invalido -> 400 detalle de problema (parseado en cliente). Smoke `dotnet run` en :5199: index 200 con `<title>MediClock</title>` + `css/medclock.css`, appsettings.json con BaseUrl prod. UI: selector arriba, 3 tarjetas (dispositivo/cantidad/proxima), lista ordenada dia/numero, formulario crear/editar con validacion client-side (rango + duplicado previo), 409 duplicado y 409 borrado-con-eventos con mensajes amables, confirmacion en dos pasos antes de borrar. Paleta logo (marino #0f2f5b, celeste #29b6d1, teal #14a3a3, fondo #f4f7fb); logo archivo pendiente de subida por el usuario (placeholder texto + cruz). Commit `feat: ui estado y crud alarmas` pusheado a main.
 
 ## Next step
-- T3 done. Sigue T4 (UI estado + CRUD alarmas).
+- T4 done. Sigue T5 (historial eventos con paginacion + manejo errores).
 
 ## Route declaration
 - Route: delegated direct (mapping trigger ya usado para backend 14 endpoints; writer trigger: 2+ files scaffold). No SDD.
