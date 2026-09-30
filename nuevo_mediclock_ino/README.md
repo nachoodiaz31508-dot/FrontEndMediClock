@@ -1,99 +1,99 @@
-# MediClock — ESP32 Firmware (`nuevo_mediclock_ino`)
+# MediClock — Firmware ESP32 (`nuevo_mediclock_ino`)
 
-Scaffold (T1) of the rewritten MediClock firmware for ESP32. Non-blocking
-super-loop, WiFi-connected, no configuration buttons, no EEPROM.
+Base (T1) del firmware MediClock para ESP32. Bucle principal no bloqueante,
+con WiFi, sin botones de configuración y sin EEPROM.
 
-## Role of the ESP32
+## Qué hace el ESP32
 
-1. **GET alarms** — polls `GET <BACKEND_URL>/alarmas` every 5 minutes (T4).
-2. **Cache locally** — stores the alarm list in NVS (`Preferences`, namespace
-   `mediclock`) so the device keeps working offline (T3).
-3. **Fire** — matches the RTC time against the cached alarms with a time
-   window (never `second == 0`) and a fired-flag so each alarm triggers
-   exactly once (T3 + T5).
-4. **POST event** — reports each fired alarm to `POST <BACKEND_URL>/eventos`
-   when WiFi is up; events are retried later if offline (T4).
+1. **GET de alarmas** — pide `GET <BACKEND_URL>/alarmas` cada 5 minutos (T4).
+2. **Guarda local** — copia la lista en NVS (`Preferences`, espacio
+   `mediclock`) para seguir funcionando sin internet (T3).
+3. **Dispara** — compara la hora del RTC con las alarmas guardadas por ventana
+   de tiempo (nunca con `segundo == 0`) y con marca ya-disparada, para que cada
+   alarma se ejecute una sola vez (T3 + T5).
+4. **POST de evento** — avisa cada disparo con `POST <BACKEND_URL>/eventos`
+   cuando hay WiFi; si no hay conexión, lo reintenta más tarde (T4).
 
-Time source priority: **NTP when WiFi is available, DS1302 RTC as fallback**
-(T2). The RTC is re-read at most once per second (cached).
+Prioridad de hora: **NTP cuando hay WiFi, RTC DS1302 como respaldo**
+(T2). El RTC se lee como máximo una vez por segundo (dato en memoria).
 
-## Wiring
+## Cableado
 
-| Part | ESP32 pin | Notes |
+| Parte | Pin ESP32 | Notas |
 | --- | --- | --- |
-| LCD 16x2 I2C (PCF8574) SDA | GPIO21 | Default I2C bus |
-| LCD 16x2 I2C (PCF8574) SCL | GPIO22 | Default I2C bus, addr `0x27` |
-| DS1302 DAT | GPIO19 | 3.3 V logic; module Vcc to 3V3 or 5 V per module spec, common GND |
+| LCD 16x2 I2C (PCF8574) SDA | GPIO21 | Bus I2C por defecto |
+| LCD 16x2 I2C (PCF8574) SCL | GPIO22 | Bus I2C por defecto, dir. `0x27` |
+| DS1302 DAT | GPIO19 | Lógica 3,3 V; Vcc del módulo a 3V3 o 5 V según su hoja de datos, GND común |
 | DS1302 CLK | GPIO18 | — |
-| DS1302 RST (CE) | GPIO5 | Strapping pin, must boot HIGH: board pull-up keeps it HIGH; never tie to GND |
-| Stepper IN1 (ULN2003) | GPIO13 | Via ULN2003, see power note |
-| Stepper IN2 (ULN2003) | GPIO12 | Strapping pin (MTDI), must boot LOW: ULN2003 input floats LOW at boot — do NOT add a pull-up here |
-| Stepper IN3 (ULN2003) | GPIO14 | — |
-| Stepper IN4 (ULN2003) | GPIO27 | — |
-| Reed switch (endstop) | GPIO34 | Input-only, active LOW to GND + **external 10 k pull-up to 3V3** (no internal pull-up on GPIO34–39) |
-| Panic button | GPIO35 | Same as reed: input-only, active LOW + **external 10 k pull-up to 3V3** |
-| Status LED | GPIO23 | Active HIGH (use series 220 Ω resistor) |
-| Buzzer (passive) | GPIO26 | Driven by LEDC PWM channel 0 @ 2 kHz |
+| DS1302 RST (CE) | GPIO5 | Pin de arranque, debe iniciar en HIGH: el pull-up de placa lo mantiene en HIGH; nunca a GND |
+| Motor IN1 (ULN2003) | GPIO13 | Vía ULN2003, ver nota de alimentación |
+| Motor IN2 (ULN2003) | GPIO12 | Pin de arranque (MTDI), debe iniciar en LOW: la entrada del ULN2003 queda en LOW al arrancar — NO agregar pull-up |
+| Motor IN3 (ULN2003) | GPIO14 | — |
+| Motor IN4 (ULN2003) | GPIO27 | — |
+| Reed (final de carrera) | GPIO34 | Solo entrada, activo en LOW a GND + **pull-up externo de 10 k a 3V3** (GPIO34–39 sin pull-up interno) |
+| Botón de pánico | GPIO35 | Igual que el reed: solo entrada, activo en LOW + **pull-up externo de 10 k a 3V3** |
+| LED de estado | GPIO23 | Activo en HIGH (usar serie de 220 Ω) |
+| Buzzer (pasivo) | GPIO26 | Por PWM LEDC canal 0 a 2 kHz |
 
-Avoided: GPIO6–GPIO11 (SPI flash), strapping GPIO0/GPIO2/GPIO15 (left
-untouched for reliable boot).
+No usados: GPIO6–GPIO11 (flash SPI), pines de arranque GPIO0/GPIO2/GPIO15
+(se dejan libres para un arranque confiable).
 
-## Power
+## Alimentación
 
-- **Separate 5 V supplies (common GND):** one for the stepper motor
-  (ULN2003 `COM`/motor rail), one for logic (ESP32 devkit USB or 5 V pin).
-- The 28BYJ-48 draws more than the ESP32 5 V pin can source reliably under
-  load — **never power the motor from the devkit regulator**.
-- DS1302 keeps time on its backup battery when main power is off.
-- ESP32 runs at 3.3 V logic; all control signals above are 3V3-safe.
+- **Fuentes de 5 V separadas (GND común):** una para el motor
+  (riel del motor / `COM` del ULN2003) y otra para la lógica (USB de la placa o pin 5 V).
+- El 28BYJ-48 consume más de lo que el regulador de la placa entrega con carga:
+  **nunca alimentar el motor desde el regulador de la placa**.
+- El DS1302 mantiene la hora con su pila cuando se corta la energía.
+- El ESP32 trabaja en 3,3 V; todas las señales de control son de 3V3.
 
-## Reed switch as endstop
+## Reed como final de carrera
 
-The reed contact is mounted so the dispenser blade magnet closes it once per
-revolution (home position). Homing (T5) rotates the stepper one step at a
-time (non-blocking) until the reed reads LOW, then stops — giving an exact,
-repeatable blade position without counting steps open-loop.
+El contacto reed se monta para que el imán de la paleta lo cierre una vez por
+vuelta (posición de origen). Al buscar origen (T5), el motor avanza de a un
+paso por vez (sin bloquear) hasta que el reed lee LOW y se detiene. Así la
+paleta queda siempre en la misma posición, sin contar pasos a ciegas.
 
-## Offline panic button
+## Botón de pánico sin internet
 
-The panic button (GPIO35, active LOW) is serviced locally in `loop()` and
-does **not** require WiFi: it silences the buzzer and forces a dispense cycle
-so the patient gets the dose even with the backend unreachable. The event is
-queued and POSTed once connectivity returns.
+El botón de pánico (GPIO35, activo en LOW) se atiende en `loop()` y
+**no** necesita WiFi: silencia el buzzer y fuerza un ciclo de dispenser
+para que el paciente reciba la dosis aunque el servidor no responda. El evento
+queda en cola y se envía (POST) cuando vuelve la conexión.
 
-## How to build
+## Cómo compilar
 
-Requires [arduino-cli](https://arduino.github.io/arduino-cli/) with the ESP32
-core and these libraries (no new dependencies beyond the original project
-plus ESP32 built-ins):
+Requiere [arduino-cli](https://arduino.github.io/arduino-cli/) con el núcleo
+ESP32 y estas bibliotecas (sin dependencias nuevas salvo las del proyecto
+original más las propias del ESP32):
 
-- `WiFi`, `HTTPClient`, `Preferences` (ESP32 core built-ins)
+- `WiFi`, `HTTPClient`, `Preferences` (incluidas en el núcleo ESP32)
 - `RtcDS1302` / `ThreeWire` — `makuna/Rtc`
 - `LiquidCrystal_I2C` — `frank-de-brabander/LiquidCrystal_I2C`
-- `Stepper` (Arduino built-in)
+- `Stepper` (incluida en Arduino)
 
 ```bash
-# one-time setup
+# instalación única
 arduino-cli core update-index
 arduino-cli core install esp32:esp32
 arduino-cli lib install "Rtc by Makuna" "LiquidCrystal I2C"
 
-# compile
+# compilar
 arduino-cli compile --fqbn esp32:esp32:esp32 nuevo_mediclock_ino
 
-# flash (adjust port)
+# cargar (ajustar puerto)
 arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32 nuevo_mediclock_ino
 ```
 
-> Host note: `arduino-cli` is not installed in this environment, so T1 was
-> verified by structural readback (includes, setup/loop, no `delay()` /
-> `Menu()` / `EEPROM`) rather than a toolchain build. Run the compile command
-> above on a provisioned host.
+> Nota de entorno: `arduino-cli` no está instalado aquí, por eso T1 se
+> verificó por lectura estructural (includes, setup/loop, sin `delay()` /
+> `Menu()` / `EEPROM`) y no por compilación. Correr el comando de arriba en
+> un equipo preparado.
 
-## Roadmap
+## Plan
 
-- T2 — cached RTC read + periodic NTP sync + LCD clock.
-- T3 — NVS alarm store + window scheduler + fired flag.
-- T4 — non-blocking WiFi reconnect + GET alarms + POST events.
-- T5 — non-blocking stepper + reed homing + buzzer/LED + panic button.
-- T6 — final loop integration + verification + docs.
+- T2 — lectura RTC en memoria + sincronización NTP + reloj en LCD.
+- T3 — guardado de alarmas en NVS + planificador por ventana + marca disparada.
+- T4 — reconexión WiFi sin bloquear + GET alarmas + POST eventos.
+- T5 — motor sin bloquear + origen con reed + buzzer/LED + botón de pánico.
+- T6 — integración final del bucle + verificación + docs.

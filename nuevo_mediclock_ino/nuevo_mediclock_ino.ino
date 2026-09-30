@@ -1,6 +1,6 @@
-// MediClock ESP32 firmware — scaffold (T1).
-// Non-blocking super-loop: every task is polled on a millis() schedule.
-// No delay() in loop(). No button-driven Menu(). No EEPROM (NVS via Preferences).
+// Firmware MediClock para ESP32 — base (T1).
+// Bucle principal no bloqueante: cada tarea se atiende por turnos según millis().
+// Sin delay() en loop(). Sin menú por botones. Sin EEPROM (se usa NVS con Preferences).
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -13,97 +13,100 @@
 
 #include "config.h"
 
-// ------------------------------------------------------------ Global objects
+// ------------------------------------------------------ Objetos globales
 ThreeWire ds1302Wire(PIN_DS1302_DAT, PIN_DS1302_CLK, PIN_DS1302_RST);
 RtcDS1302<ThreeWire> rtc(ds1302Wire);
 LiquidCrystal_I2C lcd(LCD_I2C_ADDR, LCD_COLS, LCD_ROWS);
 Stepper stepper(STEPPER_STEPS_PER_REV,
                 PIN_STEPPER_IN1, PIN_STEPPER_IN3,
                 PIN_STEPPER_IN2, PIN_STEPPER_IN4);
-Preferences prefs;  // NVS namespace for cached alarms (T3)
+Preferences prefs;  // Espacio NVS donde se guardan las alarmas (T3)
 
-// Cached time, refreshed at most once per second (T2).
-RtcDateTime cachedTime;
-unsigned long lastRtcReadMs = 0;
-unsigned long lastNtpSyncMs = 0;
-unsigned long lastFetchMs = 0;
-unsigned long lastWifiRetryMs = 0;
+// Hora en memoria: se lee del RTC como máximo una vez por segundo (T2).
+RtcDateTime tiempoCacheado;
+unsigned long ultimaLecturaRTCms = 0;
+unsigned long ultimaSincNTPms = 0;
+unsigned long ultimaConsultaMs = 0;
+unsigned long ultimoReintentoWiFims = 0;
 
-// ------------------------------------------------------------------ Helpers
-void buzzOff() {
+// ---------------------------------------------------------- Utilidades
+void apagarBuzzer() {
   ledcWrite(BUZZER_LEDC_CHANNEL, 0);
 }
 
-// ------------------------------------------------- T2: time (RTC cache + NTP)
-// Reads the DS1302 at most once per second into cachedTime and re-syncs
-// from NTP every NTP_SYNC_INTERVAL_MS when WiFi is up. Full logic lands in T2.
+// ------------------------------------------ T2: hora (RTC en memoria + NTP)
+// Lee el DS1302 una vez por segundo y lo guarda en tiempoCacheado.
+// Así el resto del programa usa el dato en memoria sin frenar el bucle.
+// La sincronización con NTP ajusta el RTC cuando hay WiFi. Lógica completa en T2.
 void leerTiempo() {
-  unsigned long now = millis();
-  if (now - lastRtcReadMs < RTC_CACHE_INTERVAL_MS) {
+  unsigned long ahora = millis();
+  if (ahora - ultimaLecturaRTCms < RTC_CACHE_INTERVAL_MS) {
     return;
   }
-  lastRtcReadMs = now;
-  cachedTime = rtc.GetDateTime();
-  // TODO(T2): validate cachedTime, fallback handling, LCD clock rendering.
+  ultimaLecturaRTCms = ahora;
+  tiempoCacheado = rtc.GetDateTime();
+  // TODO(T2): validar tiempoCacheado, definir respaldo si el RTC falla y mostrar reloj en LCD.
 }
 
-// TODO(T2/T4): pull NTP -> RTC when WiFi is connected and interval elapsed.
+// TODO(T2/T4): traer la hora por NTP cuando haya WiFi y ya pasó el intervalo.
 void sincronizarNTP() {
-  unsigned long now = millis();
+  unsigned long ahora = millis();
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
-  if (lastNtpSyncMs != 0 && now - lastNtpSyncMs < NTP_SYNC_INTERVAL_MS) {
+  if (ultimaSincNTPms != 0 && ahora - ultimaSincNTPms < NTP_SYNC_INTERVAL_MS) {
     return;
   }
-  // TODO(T2): configTime() once at boot; here update RTC from NTP + set lastNtpSyncMs.
+  // TODO(T2): configTime() una vez al arrancar; aquí actualizar el RTC desde NTP y guardar ultimaSincNTPms.
 }
 
-// --------------------------------------- T3: alarm scheduler (window match)
-// Fires each due alarm once (ya-disparada flag in NVS). Full logic lands in T3.
+// ------------------------------ T3: planificador de alarmas (por ventana)
+// Cada alarma dispara una sola vez (marca ya-disparada en NVS). Lógica completa en T3.
 void verificarAlarmas() {
-  // TODO(T3): load alarms from NVS, match [hh:mm] window (never s == 0),
-  // set fired flag, call dispense routine in T5.
+  // TODO(T3): leer alarmas desde NVS, comparar ventana [hh:mm] (nunca con s == 0),
+  // marcar disparada y llamar a la rutina de dispenser en T5.
 }
 
-// ------------------------------------------------- T4: WiFi + HTTP backend
-// Non-blocking reconnect + periodic GET /alarmas and POST /eventos.
-// Full logic lands in T4.
+// ------------------------------------------------- T4: WiFi + servidor
+// Reconexión no bloqueante + GET /alarmas periódico y POST /eventos.
+// Si no hay WiFi, el equipo sigue con lo guardado en NVS. Lógica completa en T4.
 void atenderWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     return;
   }
-  unsigned long now = millis();
-  if (now - lastWifiRetryMs < WIFI_RETRY_INTERVAL_MS) {
+  unsigned long ahora = millis();
+  if (ahora - ultimoReintentoWiFims < WIFI_RETRY_INTERVAL_MS) {
     return;
   }
-  lastWifiRetryMs = now;
-  // TODO(T4): WiFi.begin(WIFI_SSID, WIFI_PASSWORD) without blocking;
-  // on connect: GET BACKEND_URL + BACKEND_ALARMS_PATH -> NVS (every
-  // ALARMS_FETCH_INTERVAL_MS), POST fired events to BACKEND_EVENT_PATH.
+  ultimoReintentoWiFims = ahora;
+  // TODO(T4): WiFi.begin(WIFI_SSID, WIFI_PASSWORD) sin bloquear;
+  // al conectar: GET BACKEND_URL + BACKEND_ALARMS_PATH -> NVS (cada
+  // ALARMS_FETCH_INTERVAL_MS) y POST de eventos a BACKEND_EVENT_PATH.
 }
 
-// ---------------------------------- T5: actuators (stepper, buzzer, buttons)
-// Non-blocking stepper homing on reed endstop, buzzer/LED pattern,
-// offline panic button. Full logic lands in T5.
+// --------------------------- T5: actuadores (motor, buzzer, botones)
+// Motor con reed como final de carrera, patrón de buzzer/LED y botón de pánico.
+// Todo avanza por pasos cortos sin bloquear. Lógica completa en T5.
 void actualizarActuadores() {
-  // TODO(T5): reed-switch homing (PIN_REED_SWITCH, active LOW),
-  // single-step non-blocking rotation, LEDC buzzer pattern,
-  // panic button (PIN_PANIC_BUTTON) silences/dispenses offline.
+  // TODO(T5): llevar a origen con reed (PIN_REED_SWITCH, activo en LOW),
+  // giro por pasos sin bloquear, patrón de buzzer por LEDC y
+  // botón de pánico (PIN_PANIC_BUTTON) que dispensa sin WiFi.
 }
 
-// -------------------------------------------------------------------- Setup
+// --------------------------------------------------------------- Arranque
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PIN_REED_SWITCH, INPUT_PULLUP);   // needs external 10 k pull-up (GPIO34)
-  pinMode(PIN_PANIC_BUTTON, INPUT_PULLUP);  // needs external 10 k pull-up (GPIO35)
+  // GPIO34/35 son solo entrada y no tienen pull-up interno:
+  // llevan pull-up externo de 10 k a 3,3 V y activan en LOW (a GND).
+  pinMode(PIN_REED_SWITCH, INPUT_PULLUP);
+  pinMode(PIN_PANIC_BUTTON, INPUT_PULLUP);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
 
   ledcSetup(BUZZER_LEDC_CHANNEL, BUZZER_LEDC_FREQ_HZ, BUZZER_LEDC_RES_BITS);
   ledcAttachPin(PIN_BUZZER, BUZZER_LEDC_CHANNEL);
-  buzzOff();
+  apagarBuzzer();
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   lcd.init();
@@ -112,18 +115,19 @@ void setup() {
   lcd.print("MediClock boot");
 
   rtc.Begin();
-  // TODO(T2): if RTC lost confidence (!IsDateTimeValid / LastError),
-  // flag for NTP sync instead of trusting the registers.
-  cachedTime = rtc.GetDateTime();
+  // TODO(T2): si el RTC perdió validez (!IsDateTimeValid / LastError),
+  // marcar para sincronizar por NTP en vez de confiar en sus registros.
+  tiempoCacheado = rtc.GetDateTime();
 
-  stepper.setSpeed(12);  // rpm; actual stepping stays non-blocking in T5
+  stepper.setSpeed(12);  // rpm; el giro real sigue por pasos no bloqueantes en T5
   prefs.begin("mediclock", false);
 
   Serial.println(F("[mediclock] setup done"));
 }
 
-// --------------------------------------------------------------------- Loop
+// -------------------------------------------------------- Bucle principal
 void loop() {
+  // Cada función decide sola si ya es su turno; ninguna detiene a las demás.
   leerTiempo();
   sincronizarNTP();
   verificarAlarmas();

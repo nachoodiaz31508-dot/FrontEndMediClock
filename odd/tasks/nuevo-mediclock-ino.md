@@ -49,6 +49,7 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 
 ## Progreso
 - 2026-09-30: T1 done en `814359b` — scaffold 3 archivos, 361 inserciones, sin delay/Menu/EEPROM reales, arduino-cli pendiente (no instalado en host). Next: T2 tiempo.
+- 2026-09-30: T1-ES pasada a español didáctico (renombres tiempoCacheado/apagarBuzzer, comentarios y README en español neutro, pines e intervalos intactos, solo placeholders).
 
 ## Decisiones
 - Reescritura desde cero aceptada: preserva ideas probadas, descarta defines UNO.
