@@ -24,7 +24,7 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 
 ## Checklist
 - [x] T1 — Scaffold `nuevo_mediclock_ino/`: `.ino` base que compila, `config.h` con pines ESP32 seguros, README cableado. (ruta: delegada, trigger: writer 2+ files)
-- [ ] T2 — Tiempo: cache RTC 1s + sync NTP periódico + fallback + LCD reloj.
+- [x] T2 — Tiempo: cache RTC 1s + sync NTP periódico + fallback + LCD reloj.
 - [ ] T3 — Alarmas NVS + scheduler con ventana (no `s==0`) + flag ya-disparada.
 - [ ] T4 — WiFi + HTTP: GET alarmas back, POST evento alarma, reconexión no bloqueante.
 - [ ] T5 — Actuadores: stepper no bloqueante + reed endstop + buzzer/LED patrón + botón pánico.
@@ -45,11 +45,12 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 
 ## Delivery
 - Estrategia: `ask-on-risk` (default). Forecast: ~550-650 líneas autoradas (scaffold ~150, tiempo ~80, NVS+scheduler ~100, WiFi+HTTP ~150, actuadores ~120). Supera heurística 400 → se avisará antes de PR; por ahora work-unit commits en rama feature, sin PR.
-- Running: 0 líneas. Chain strategy: pendiente (solo si se pide PR).
+- Running: ~480 líneas (T1 361 + T2 ~120). Chain strategy: pendiente (solo si se pide PR).
 
 ## Progreso
 - 2026-09-30: T1 done en `814359b` — scaffold 3 archivos, 361 inserciones, sin delay/Menu/EEPROM reales, arduino-cli pendiente (no instalado en host). Next: T2 tiempo.
 - 2026-09-30: T1-ES pasada a español didáctico (renombres tiempoCacheado/apagarBuzzer, comentarios y README en español neutro, pines e intervalos intactos, solo placeholders).
+- 2026-09-30: T2 done sin commit — leerTiempo() con cache 1s + validación IsDateTimeValid/LastError/rango (rtcValido/horaValida), sincronizarNTP() con configTime() una vez en setup + getLocalTime con reintento 30 s sin hora / 6 h con hora + SetDateTime al RTC, mostrarReloj() en LCD ("Mie 07:30"/fecha, "SIN HORA", "SYNC" 2 s), config.h +3 defines sin tocar pines, solo time.h estándar. Verificado por readback (sin delay/Menu/EEPROM reales, placeholders intactos); arduino-cli ausente, compilación pendiente en equipo preparado. Next: T3 NVS+scheduler.
 
 ## Decisiones
 - Reescritura desde cero aceptada: preserva ideas probadas, descarta defines UNO.

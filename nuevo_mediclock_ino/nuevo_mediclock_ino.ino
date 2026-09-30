@@ -10,6 +10,7 @@
 #include <RtcDS1302.h>
 #include <LiquidCrystal_I2C.h>
 #include <Stepper.h>
+#include <time.h>  // hora NTP del ESP32 (getLocalTime/configTime, sin librerías extra)
 
 #include "config.h"
 
@@ -25,9 +26,18 @@ Preferences prefs;  // Espacio NVS donde se guardan las alarmas (T3)
 // Hora en memoria: se lee del RTC como máximo una vez por segundo (T2).
 RtcDateTime tiempoCacheado;
 unsigned long ultimaLecturaRTCms = 0;
-unsigned long ultimaSincNTPms = 0;
+unsigned long ultimaSincNTPms = 0;    // última sincronización NTP exitosa
+unsigned long ultimoIntentoNTPms = 0;  // último intento NTP (exitoso o no)
 unsigned long ultimaConsultaMs = 0;
 unsigned long ultimoReintentoWiFims = 0;
+unsigned long ultimaPantallaRelojms = 0;  // último dibujo del reloj en LCD
+unsigned long avisoSyncHastaMs = 0;  // muestra "SYNC" hasta este momento
+
+// Estado de la hora (T2): rtcValido dice si el DS1302 responde bien;
+// horaValida dice si tiempoCacheado se puede usar (RTC válido o NTP reciente).
+bool rtcValido = false;
+bool horaValida = false;
+bool ntpConfigurado = false;  // configTime() se llama una sola vez en setup()
 
 // ---------------------------------------------------------- Utilidades
 void apagarBuzzer() {
@@ -35,29 +45,108 @@ void apagarBuzzer() {
 }
 
 // ------------------------------------------ T2: hora (RTC en memoria + NTP)
+// Revisa que una fecha del RTC sea posible (pila agotada o primer
+// arranque devuelven años absurdos). Solo valida el calendario.
+bool esFechaPosible(const RtcDateTime& t) {
+  if (t.Year() < 2024 || t.Year() > 2099) return false;
+  if (t.Month() == 0 || t.Month() > 12) return false;
+  if (t.Day() == 0 || t.Day() > 31) return false;
+  return true;
+}
+
 // Lee el DS1302 una vez por segundo y lo guarda en tiempoCacheado.
 // Así el resto del programa usa el dato en memoria sin frenar el bucle.
-// La sincronización con NTP ajusta el RTC cuando hay WiFi. Lógica completa en T2.
+// Si el RTC falla (oscilador detenido o error de lectura) no se confía
+// en sus registros: se marca horaValida = false para que NTP tome el relevo.
 void leerTiempo() {
   unsigned long ahora = millis();
   if (ahora - ultimaLecturaRTCms < RTC_CACHE_INTERVAL_MS) {
     return;
   }
   ultimaLecturaRTCms = ahora;
-  tiempoCacheado = rtc.GetDateTime();
-  // TODO(T2): validar tiempoCacheado, definir respaldo si el RTC falla y mostrar reloj en LCD.
+  RtcDateTime lectura = rtc.GetDateTime();
+  if (!rtc.IsDateTimeValid() || rtc.LastError() != 0 || !esFechaPosible(lectura)) {
+    rtcValido = false;
+    horaValida = false;
+    return;
+  }
+  rtcValido = true;
+  horaValida = true;
+  tiempoCacheado = lectura;
 }
 
-// TODO(T2/T4): traer la hora por NTP cuando haya WiFi y ya pasó el intervalo.
+// Trae la hora por NTP cuando hay WiFi y ya pasó el intervalo.
+// Con hora válida sincroniza cada NTP_SYNC_INTERVAL_MS; sin hora válida
+// reintenta cada NTP_REINTENTO_SIN_HORA_MS hasta lograr la primera.
+// Al lograrla ajusta el RTC para seguir funcionando sin WiFi.
 void sincronizarNTP() {
+  if (!ntpConfigurado || WiFi.status() != WL_CONNECTED) {
+    return;
+  }
   unsigned long ahora = millis();
-  if (WiFi.status() != WL_CONNECTED) {
+  bool toca = horaValida
+      ? (ultimaSincNTPms == 0 || ahora - ultimaSincNTPms >= NTP_SYNC_INTERVAL_MS)
+      : (ultimoIntentoNTPms == 0 || ahora - ultimoIntentoNTPms >= NTP_REINTENTO_SIN_HORA_MS);
+  if (!toca) {
     return;
   }
-  if (ultimaSincNTPms != 0 && ahora - ultimaSincNTPms < NTP_SYNC_INTERVAL_MS) {
+  ultimoIntentoNTPms = ahora;
+  struct tm partes;
+  // Espera breve (máximo 1,5 s y solo en su turno): no frena el bucle.
+  if (!getLocalTime(&partes, 1500)) {
+    return;  // sin respuesta del servidor, se reintenta luego
+  }
+  RtcDateTime desdeNTP(partes.tm_year + 1900, partes.tm_mon + 1, partes.tm_mday,
+                       partes.tm_hour, partes.tm_min, partes.tm_sec);
+  rtc.SetDateTime(desdeNTP);  // el RTC guarda la hora como respaldo offline
+  tiempoCacheado = desdeNTP;
+  ultimaLecturaRTCms = ahora;
+  ultimaSincNTPms = ahora;
+  rtcValido = true;
+  horaValida = true;
+  avisoSyncHastaMs = ahora + LCD_SYNC_AVISO_MS;  // aviso breve en pantalla
+}
+
+// Nombres cortos de día en español (DayOfWeek: 0 = domingo).
+const char* DIAS_ES[7] = {"Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"};
+
+// Dibuja el reloj en el LCD 16x2, refresco ~1 s sin bloquear.
+// Línea 0: "Mie 07:30" · Línea 1: "01/10/2026" (+ " SYNC" al sincronizar).
+// Sin hora válida muestra "SIN HORA" hasta que llegue NTP.
+void mostrarReloj() {
+  unsigned long ahora = millis();
+  if (ahora - ultimaPantallaRelojms < LCD_REFRESH_INTERVAL_MS) {
     return;
   }
-  // TODO(T2): configTime() una vez al arrancar; aquí actualizar el RTC desde NTP y guardar ultimaSincNTPms.
+  ultimaPantallaRelojms = ahora;
+  char texto[17];
+  char linea[17];
+  if (!horaValida) {
+    snprintf(linea, sizeof(linea), "%-16s", "SIN HORA");
+    lcd.setCursor(0, 0);
+    lcd.print(linea);
+    snprintf(linea, sizeof(linea), "%-16s", "Esperando NTP");
+    lcd.setCursor(0, 1);
+    lcd.print(linea);
+    return;
+  }
+  snprintf(texto, sizeof(texto), "%s %02d:%02d",
+           DIAS_ES[tiempoCacheado.DayOfWeek() % 7],
+           tiempoCacheado.Hour(), tiempoCacheado.Minute());
+  snprintf(linea, sizeof(linea), "%-16s", texto);
+  lcd.setCursor(0, 0);
+  lcd.print(linea);
+  snprintf(texto, sizeof(texto), "%02d/%02d/%04d",
+           tiempoCacheado.Day(), tiempoCacheado.Month(), tiempoCacheado.Year());
+  if (ahora < avisoSyncHastaMs) {
+    char conAviso[17];
+    snprintf(conAviso, sizeof(conAviso), "%s SYNC", texto);  // 15 letras, entra en 16
+    snprintf(linea, sizeof(linea), "%-16s", conAviso);
+  } else {
+    snprintf(linea, sizeof(linea), "%-16s", texto);
+  }
+  lcd.setCursor(0, 1);
+  lcd.print(linea);
 }
 
 // ------------------------------ T3: planificador de alarmas (por ventana)
@@ -115,9 +204,24 @@ void setup() {
   lcd.print("MediClock boot");
 
   rtc.Begin();
-  // TODO(T2): si el RTC perdió validez (!IsDateTimeValid / LastError),
-  // marcar para sincronizar por NTP en vez de confiar en sus registros.
+
+  // Fuente principal de hora: se configura una sola vez al arrancar.
+  // sincronizarNTP() solo lee cuando toca, sin bloquear el bucle.
+  configTime(NTP_GMT_OFFSET_SEC, NTP_DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+  ntpConfigurado = true;
+
+  // Primera lectura con la misma validación que leerTiempo():
+  // si el DS1302 perdió la hora no se confía en sus registros
+  // y sincronizarNTP() la traerá cuando haya WiFi.
+  ultimaLecturaRTCms = millis();
   tiempoCacheado = rtc.GetDateTime();
+  if (!rtc.IsDateTimeValid() || rtc.LastError() != 0 || !esFechaPosible(tiempoCacheado)) {
+    rtcValido = false;
+    horaValida = false;
+  } else {
+    rtcValido = true;
+    horaValida = true;
+  }
 
   stepper.setSpeed(12);  // rpm; el giro real sigue por pasos no bloqueantes en T5
   prefs.begin("mediclock", false);
@@ -130,6 +234,7 @@ void loop() {
   // Cada función decide sola si ya es su turno; ninguna detiene a las demás.
   leerTiempo();
   sincronizarNTP();
+  mostrarReloj();
   verificarAlarmas();
   atenderWiFi();
   actualizarActuadores();
