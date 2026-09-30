@@ -26,12 +26,12 @@ Out of scope: auth, multi-usuario, ESP firmware, cambios backend.
 - Linux Mint 22.3, git ok, dotnet SDK 8 requerido
 
 ## Tasks
-- [ ] T1: Instalar SDK .NET 8 y verificar `dotnet --version`
-- [ ] T2: Andamiar Blazor WASM en ./ (net8.0) y `dotnet build` verde
+- [x] T1: Instalar SDK .NET 8 y verificar `dotnet --version`
+- [x] T2: Andamiar Blazor WASM en ./ (net8.0) y `dotnet build` verde
 - [ ] T3: Modelos DTO + ApiClient con BASE_URL configurable + selector dispositivos
 - [ ] T4: UI estado + CRUD alarmas con validacion client-side
 - [ ] T5: UI historial eventos con paginacion + manejo errores
-- [ ] T6: Crear repo privado FrontEndMediClock, commit inicial y push
+- [x] T6: Crear repo privado FrontEndMediClock, commit inicial y push
 
 ## Authorized scope
 Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sistema; crear repo privado GitHub FrontEndMediClock via gh default auth. Push y PRs futuros a decision del usuario.
@@ -49,9 +49,14 @@ Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sis
 
 ## Progress
 - 2026-09-30: doc creado, 6 tasks. Env: Mint 22.3, git 2.43, dotnet missing -> instalar.
+- 2026-09-30: T1+T2+T6 done. Commit 09f74a3 `feat: bootstrap blazor wasm frontend` pushed to main. Repo: https://github.com/nachoodiaz31508-dot/FrontEndMediClock (private). Install note: sudo interactivo no disponible en sesion -> SDK via script oficial Microsoft dotnet-install.sh --channel 8.0 a ~/.dotnet (desvio de apt-path, misma fuente). dev-certs --trust pendiente (requiere sudo/store, solo afecta run https local).
 
 ## Verification evidence
-- Pendiente
+- `dotnet --version`: 8.0.425
+- `dotnet --list-sdks`: 8.0.425 [/home/joacoynacho/.dotnet/sdk]
+- `dotnet build`: Compilacion correcta, 0 Advertencia(s), 0 Errores (16.93s)
+- `git log --oneline -1`: 09f74a3 feat: bootstrap blazor wasm frontend
+- `gh repo view --json name,visibility,url`: pendiente re-verificacion (repo creado via `gh repo create FrontEndMediClock --private --source=. --push` -> https://github.com/nachoodiaz31508-dot/FrontEndMediClock)
 
 ## Next step
 - Ejecutar T1-T2-T6 via writer unico, luego T3-T5.
