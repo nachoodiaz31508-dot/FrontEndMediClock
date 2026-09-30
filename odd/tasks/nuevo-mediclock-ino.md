@@ -23,7 +23,7 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 - Botón pánico físico = silenciar/entregar aunque no haya WiFi.
 
 ## Checklist
-- [ ] T1 — Scaffold `nuevo_mediclock_ino/`: `.ino` base que compila, `config.h` con pines ESP32 seguros, README cableado. (ruta: delegada, trigger: writer 2+ files)
+- [x] T1 — Scaffold `nuevo_mediclock_ino/`: `.ino` base que compila, `config.h` con pines ESP32 seguros, README cableado. (ruta: delegada, trigger: writer 2+ files)
 - [ ] T2 — Tiempo: cache RTC 1s + sync NTP periódico + fallback + LCD reloj.
 - [ ] T3 — Alarmas NVS + scheduler con ventana (no `s==0`) + flag ya-disparada.
 - [ ] T4 — WiFi + HTTP: GET alarmas back, POST evento alarma, reconexión no bloqueante.
@@ -48,7 +48,7 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 - Running: 0 líneas. Chain strategy: pendiente (solo si se pide PR).
 
 ## Progreso
-- 2026-09-30: creado documento, rama `feature/nuevo-mediclock-ino`. Next: T1 scaffold.
+- 2026-09-30: T1 done en `814359b` — scaffold 3 archivos, 361 inserciones, sin delay/Menu/EEPROM reales, arduino-cli pendiente (no instalado en host). Next: T2 tiempo.
 
 ## Decisiones
 - Reescritura desde cero aceptada: preserva ideas probadas, descarta defines UNO.
