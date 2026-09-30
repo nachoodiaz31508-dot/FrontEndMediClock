@@ -8,9 +8,9 @@
 
 <PageTitle>MediClock - Alarmas</PageTitle>
 
-@* Pantalla principal T4: estado del dispositivo y CRUD de alarmas.
-   El backend es la fuente de verdad: despues de cada cambio
-   se recarga la configuracion completa. *@
+@* Pantalla principal T4+T5: estado del dispositivo, CRUD de alarmas
+   e historial de eventos. El backend es la fuente de verdad: despues
+   de cada cambio se recarga la configuracion completa. *@
 
 <h1>Alarmas del pastillero</h1>
 
@@ -44,7 +44,7 @@ else if (config is not null)
             <span class="mc-tarjeta-titulo">Proxima alarma</span>
             @if (ProximaAlarma() is Alarma proxima)
             {
-                <strong>Dia @proxima.diaSemana, nro @proxima.numeroAlarma</strong>
+                <strong>@NombreDia(proxima.diaSemana), nro @proxima.numeroAlarma</strong>
                 <span class="mc-detalle">@proxima.hora</span>
             }
             else
@@ -78,7 +78,7 @@ else if (config is not null)
                 {
                     <li class="mc-item">
                         <span>
-                            <strong>Dia @alarma.diaSemana</strong>
+                            <strong>@NombreDia(alarma.diaSemana)</strong>
                             · nro @alarma.numeroAlarma
                             · @alarma.hora
                         </span>
@@ -95,7 +95,7 @@ else if (config is not null)
         @if (alarmaABorrar is not null)
         {
             <div class="mc-confirmar">
-                <p>¿Borrar la alarma del dia @alarmaABorrar.diaSemana, nro @alarmaABorrar.numeroAlarma (@alarmaABorrar.hora)?</p>
+                <p>¿Borrar la alarma del @NombreDia(alarmaABorrar.diaSemana).ToLower(), nro @alarmaABorrar.numeroAlarma (@alarmaABorrar.hora)?</p>
                 <button class="mc-boton mc-boton-peligro" @onclick="ConfirmarBorrado">Si, borrar</button>
                 <button class="mc-boton mc-boton-secundario" @onclick="CancelarBorrado">Cancelar</button>
             </div>
@@ -111,7 +111,7 @@ else if (config is not null)
             <ValidationSummary />
             <div class="mc-campo">
                 <label>
-                    Dia de semana (1 a 7):
+                    Dia de semana (1 = lunes, 7 = domingo):
                     <InputNumber @bind-Value="formulario.diaSemana" min="1" max="7" />
                 </label>
                 <ValidationMessage For="() => formulario.diaSemana" />
@@ -143,6 +143,65 @@ else if (config is not null)
             }
         </EditForm>
     </section>
+
+    @* Historial de eventos T5: tabla simple con paginacion por boton.
+       El servidor pagina desde 1; cada clic trae 20 mas y los agrega. *@
+    <section>
+        <h2>Historial de eventos</h2>
+        @if (cargandoEventos && eventos.Count == 0)
+        {
+            <p>Cargando eventos...</p>
+        }
+        else if (errorEventos is not null && eventos.Count == 0)
+        {
+            <p class="mc-error">@errorEventos</p>
+            <button class="mc-boton mc-boton-secundario" @onclick="ReintentarEventos">Reintentar</button>
+        }
+        else if (eventos.Count == 0)
+        {
+            <p>Todavia no hay eventos para este dispositivo. Cuando el pastillero registre actividad, aparecera aqui.</p>
+        }
+        else
+        {
+            @if (errorEventos is not null)
+            {
+                <p class="mc-error">@errorEventos</p>
+            }
+            <div class="mc-tabla-contenedor">
+                <table class="mc-tabla">
+                    <thead>
+                        <tr>
+                            <th>Fecha y hora</th>
+                            <th>Tipo</th>
+                            <th>Descripcion</th>
+                            <th>Alarma</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var evento in eventos)
+                        {
+                            <tr>
+                                <td>@FormatearFecha(evento.fechaHora)</td>
+                                <td>@evento.tipo</td>
+                                <td>@evento.descripcion</td>
+                                <td>@(evento.alarmaId?.ToString() ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (hayMasEventos)
+            {
+                <button class="mc-boton mc-boton-secundario" @onclick="CargarMasEventos" disabled="@cargandoEventos">
+                    @(cargandoEventos ? "Cargando..." : "Cargar mas")
+                </button>
+            }
+            else
+            {
+                <p class="mc-detalle">No hay mas eventos para mostrar.</p>
+            }
+        }
+    </section>
 }
 
 @code {
@@ -156,6 +215,14 @@ else if (config is not null)
     private Alarma formulario = NuevaAlarmaVacia();
     private int? editandoId;
     private Alarma? alarmaABorrar;
+
+    // Historial T5: lista acumulada, pagina actual y tamanio fijo de 20.
+    private List<Evento> eventos = new();
+    private int paginaEventos = 1;
+    private const int TamanioEventos = 20;
+    private bool cargandoEventos = false;
+    private bool hayMasEventos = true;
+    private string? errorEventos;
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,6 +243,7 @@ else if (config is not null)
         try
         {
             config = await Api.ObtenerConfiguracion(Estado.DispositivoId);
+            await CargarEventos(reiniciar: true);
         }
         catch (ExcepcionApi ex)
         {
@@ -187,13 +255,66 @@ else if (config is not null)
         }
     }
 
+    // Trae una pagina de eventos y la agrega a la lista.
+    // Con reiniciar se empieza de cero (cambio de dispositivo o reintento).
+    private async Task CargarEventos(bool reiniciar)
+    {
+        if (reiniciar)
+        {
+            paginaEventos = 1;
+            eventos = new();
+            hayMasEventos = true;
+        }
+
+        cargandoEventos = true;
+        errorEventos = null;
+        try
+        {
+            var pagina = await Api.ListarEventos(Estado.DispositivoId, paginaEventos, TamanioEventos);
+            eventos.AddRange(pagina);
+            // Si vino menos de lo pedido, no quedan mas paginas.
+            hayMasEventos = pagina.Count == TamanioEventos;
+        }
+        catch (ExcepcionApi ex)
+        {
+            errorEventos = string.Join(" ", ex.Mensajes);
+        }
+        finally
+        {
+            cargandoEventos = false;
+        }
+    }
+
+    private async Task CargarMasEventos()
+    {
+        paginaEventos++;
+        await CargarEventos(reiniciar: false);
+    }
+
+    private async Task ReintentarEventos()
+    {
+        await CargarEventos(reiniciar: true);
+    }
+
+    // Muestra la fecha ISO del servidor en formato local simple.
+    private static string FormatearFecha(string fechaHora)
+    {
+        if (DateTime.TryParse(fechaHora, out var fecha))
+        {
+            return fecha.ToString("dd/MM/yyyy HH:mm");
+        }
+
+        return fechaHora;
+    }
+
     private static Alarma NuevaAlarmaVacia() => new() { diaSemana = 1, numeroAlarma = 1, hora = "08:00:00" };
 
     private List<Alarma> AlarmasOrdenadas() =>
         config?.alarmas.OrderBy(a => a.diaSemana).ThenBy(a => a.numeroAlarma).ToList() ?? new();
 
     // Proxima alarma semanal: la mas cercana desde hoy y la hora actual.
-    // Usa la convencion del modelo (dia 1 = domingo, igual que DayOfWeek + 1).
+    // Convencion del backend: dia 1 = lunes, 7 = domingo.
+    // DayOfWeek trae domingo = 0, por eso se convierte con ((int) + 6) % 7 + 1.
     private Alarma? ProximaAlarma()
     {
         if (config is null || config.alarmas.Count == 0)
@@ -201,7 +322,7 @@ else if (config is not null)
             return null;
         }
 
-        var hoy = (int)DateTime.Today.DayOfWeek + 1;
+        var hoy = ((int)DateTime.Today.DayOfWeek + 6) % 7 + 1;
         var ahora = DateTime.Now.TimeOfDay;
         return config.alarmas
             .OrderBy(a =>
@@ -220,6 +341,19 @@ else if (config is not null)
             .ThenBy(a => a.hora)
             .First();
     }
+
+    // Nombre del dia 1 = lunes .. 7 = domingo (contrato del backend).
+    private static string NombreDia(int dia) => dia switch
+    {
+        1 => "Lunes",
+        2 => "Martes",
+        3 => "Miercoles",
+        4 => "Jueves",
+        5 => "Viernes",
+        6 => "Sabado",
+        7 => "Domingo",
+        _ => $"Dia {dia}",
+    };
 
     private void EmpezarEdicion(Alarma alarma)
     {
@@ -274,7 +408,7 @@ else if (config is not null)
             && a.alarmaId != editandoId);
         if (duplicada)
         {
-            errorFormulario = $"Ya existe la alarma {formulario.numeroAlarma} para el dia {formulario.diaSemana}. Elija otro dia o numero.";
+            errorFormulario = $"Ya existe la alarma {formulario.numeroAlarma} para el {NombreDia(formulario.diaSemana).ToLower()}. Elija otro dia o numero.";
             return;
         }
 

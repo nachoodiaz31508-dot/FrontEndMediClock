@@ -31,7 +31,8 @@ Out of scope: auth, multi-usuario, ESP firmware, cambios backend.
 - [x] T2: Andamiar Blazor WASM en ./ (net8.0) y `dotnet build` verde
 - [x] T3: Modelos DTO + ApiClient con BASE_URL configurable + selector dispositivos
 - [x] T4: UI estado + CRUD alarmas con validacion client-side
-- [ ] T5: UI historial eventos con paginacion + manejo errores
+- [x] T5: UI historial eventos con paginacion + manejo errores
+- [x] T5b: Fix dia 1=lunes..7=domingo + logo en header/nav/favicon
 - [x] T6: Crear repo privado FrontEndMediClock, commit inicial y push
 
 ## Authorized scope
@@ -60,9 +61,12 @@ Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sis
 - `gh repo view --json name,visibility,url`: pendiente re-verificacion (repo creado via `gh repo create FrontEndMediClock --private --source=. --push` -> https://github.com/nachoodiaz31508-dot/FrontEndMediClock)
 - T3 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 13.48s). Smoke: `dotnet run` sirve index 200 y appsettings.json con BaseUrl; GET real `api/dispositivos/1/configuracion` devuelve ESP_32_Prueba con 1 alarma. Commit `feat: modelos y cliente api con selector` pusheado a main.
 - T4 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 15.23s). Rutas CRUD verificadas contra prod: POST `api/dispositivos/1/alarmas` -> 201, PUT `.../alarmas/2` -> 200, GET una -> 200, DELETE -> 204, lista final intacta (1 alarma). Duplicado -> 409 string[] amable; dia invalido -> 400 detalle de problema (parseado en cliente). Smoke `dotnet run` en :5199: index 200 con `<title>MediClock</title>` + `css/medclock.css`, appsettings.json con BaseUrl prod. UI: selector arriba, 3 tarjetas (dispositivo/cantidad/proxima), lista ordenada dia/numero, formulario crear/editar con validacion client-side (rango + duplicado previo), 409 duplicado y 409 borrado-con-eventos con mensajes amables, confirmacion en dos pasos antes de borrar. Paleta logo (marino #0f2f5b, celeste #29b6d1, teal #14a3a3, fondo #f4f7fb); logo archivo pendiente de subida por el usuario (placeholder texto + cruz). Commit `feat: ui estado y crud alarmas` pusheado a main.
+- T5 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 15.08s). Seccion Historial en Home: tabla fechaHora/tipo/descripcion/alarma, tamanio 20, boton Cargar mas, error string[] en español, vacio amable, recarga al cambiar dispositivo. Smoke prod: GET `api/dispositivos/1/configuracion` -> ESP_32_Prueba (1 alarma dia 2 = martes); GET `api/dispositivos/1/eventos?pagina=1&tamanioPagina=20` -> 2 eventos (AlarmaActivada, DosisEntregada).
+- Fix dia (2026-09-30): backend valida "entre 1 y 7 (Lunes a Domingo)" (400 probado con dia 8 y 0). Comentario Alarma.cs 1=lunes..7=domingo; Proxima usa ((DayOfWeek+6)%7)+1; nombres Lunes..Domingo en tarjeta/lista/borrado/formulario.
+- Logo (2026-09-30): `wwwroot/img/mediclock-logo.png` en header MainLayout + NavMenu (img con alt "Logotipo de MediClock"); favicon apunta al logo (favicon.png queda como respaldo en wwwroot).
 
 ## Next step
-- T4 done. Sigue T5 (historial eventos con paginacion + manejo errores).
+- T5 done. MVP frontend completo (T1-T6 + fix dia + logo). Sigue deploy o mejoras a decision del usuario.
 
 ## Route declaration
 - Route: delegated direct (mapping trigger ya usado para backend 14 endpoints; writer trigger: 2+ files scaffold). No SDD.

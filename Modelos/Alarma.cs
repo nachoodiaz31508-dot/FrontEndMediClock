@@ -9,7 +9,7 @@ public class Alarma
 {
     public int alarmaId { get; set; }
 
-    // Dia de semana 1-7 (1 = domingo, segun contrato del backend).
+    // Dia de semana 1-7 (1 = lunes, 7 = domingo, segun contrato del backend).
     [Range(1, 7, ErrorMessage = "El dia de semana debe estar entre 1 y 7.")]
     public int diaSemana { get; set; }
 

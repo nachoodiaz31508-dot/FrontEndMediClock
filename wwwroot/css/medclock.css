@@ -1,6 +1,6 @@
 @* Paleta MediClock: azul marino para header y botones primarios,
    celeste y teal como acentos, fondo claro y texto oscuro.
-   El archivo del logo se agregara a wwwroot cuando el usuario lo suba. *@
+   Logo en wwwroot/img/mediclock-logo.png (favicon.png queda como respaldo). *@
 
 body {
     background-color: #f4f7fb;
@@ -130,6 +130,35 @@ body {
     border: 1px solid #14a3a3;
     border-radius: 8px;
     padding: 0.6rem 0.9rem;
+}
+
+.mc-logo {
+    height: 28px;
+    width: auto;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+.mc-tabla-contenedor {
+    overflow-x: auto;
+}
+
+.mc-tabla {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #ffffff;
+}
+
+.mc-tabla th,
+.mc-tabla td {
+    border: 1px solid #dbe5f1;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.mc-tabla thead th {
+    background-color: #0f2f5b;
+    color: #ffffff;
 }
 
 .mc-error {
