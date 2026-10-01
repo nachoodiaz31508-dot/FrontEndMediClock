@@ -57,7 +57,7 @@
 // SOLO MARCADORES — nunca guardar claves reales (ver política del repo).
 #define WIFI_SSID          "TU_SSID"
 #define WIFI_PASSWORD      "TU_PASSWORD"
-#define BACKEND_URL        "https://tu-back/api"
+#define BACKEND_URL        "https://mediclockbackend.runasp.net/api/dispositivos/1"
 #define BACKEND_ALARMS_PATH "/alarmas"
 #define BACKEND_EVENT_PATH  "/eventos"
 
