@@ -32,6 +32,9 @@ unsigned long ultimaConsultaMs = 0;
 unsigned long ultimoReintentoWiFims = 0;
 unsigned long ultimaPantallaRelojms = 0;  // último dibujo del reloj en LCD
 unsigned long avisoSyncHastaMs = 0;  // muestra "SYNC" hasta este momento
+unsigned long mensajeTemporalHastaMs = 0;  // T5: mientras no vence, el LCD lo usa T5
+                                           // ("Dosis entregada" o estado de pánico)
+                                           // y mostrarReloj() no lo pisa.
 
 // Estado de la hora (T2): rtcValido dice si el DS1302 responde bien;
 // horaValida dice si tiempoCacheado se puede usar (RTC válido o NTP reciente).
@@ -149,6 +152,9 @@ void mostrarReloj() {
   unsigned long ahora = millis();
   if (alarmaPendiente.activa) {
     return;  // el aviso "!ALARMA!" queda en pantalla hasta que T5 lo consuma
+  }
+  if (ahora < mensajeTemporalHastaMs) {
+    return;  // T5 muestra "Dosis entregada" o estado de pánico (1-2 s)
   }
   if (ahora - ultimaPantallaRelojms < LCD_REFRESH_INTERVAL_MS) {
     return;
@@ -539,12 +545,210 @@ void atenderWiFi() {
 }
 
 // --------------------------- T5: actuadores (motor, buzzer, botones)
-// Motor con reed como final de carrera, patrón de buzzer/LED y botón de pánico.
-// Todo avanza por pasos cortos sin bloquear. Lógica completa en T5.
+// El dispensador avanza por pasos cortos sin bloquear: cada turno del loop
+// mueve solo STEPPER_PASOS_POR_TURNO pasos y vuelve. Estados:
+//   REPOSO -> HOMING (buscar origen con reed) -> DOSIS (giro de entrega)
+//   -> AVISO ("Dosis entregada" 1 s) -> REPOSO.
+// El buzzer suena intermitente (500 ms on/off) con el LED a la par mientras
+// alarmaPendiente sigue activa. El botón de pánico confirma sin WiFi.
+enum EstadoDispensador {
+  DISP_EN_REPOSO = 0,  // sin trabajo pendiente
+  DISP_HOMING = 1,     // girando hasta que el reed marque el origen
+  DISP_DOSIS = 2,      // avanzando los pasos de la dosis
+  DISP_AVISO = 3        // mostrando "Dosis entregada" antes de liberar
+};
+EstadoDispensador estadoDispensador = DISP_EN_REPOSO;
+long pasosHomingDados = 0;       // pasos girados buscando el origen
+long pasosDosisRestantes = 0;    // pasos que faltan de la dosis
+unsigned long ultimoPasoMotorms = 0;     // último turno de pasos del motor
+unsigned long ultimoCambioBuzzerms = 0;  // último cambio on/off del buzzer
+bool buzzerEncendido = false;    // estado actual del patrón intermitente
+int ultimaLecturaPanico = HIGH;  // última lectura cruda del botón
+int estadoPanicoEstable = HIGH;  // lectura confirmada tras antirebote
+unsigned long ultimoRebotePanicoms = 0;  // último cambio de la lectura cruda
+
+// Enciende el buzzer pasivo por LEDC (el apagado usa apagarBuzzer()).
+void encenderBuzzer() {
+  ledcWrite(BUZZER_LEDC_CHANNEL, BUZZER_DUTY);
+}
+
+// Patrón intermitente no bloqueante: cada BUZZER_PARPADEO_MS cambia de
+// estado y el LED acompaña (encendido = suena + LED). Solo suena mientras
+// hay alarma pendiente; al terminar se apaga en finalizarDosis().
+void actualizarBuzzerAlarma() {
+  if (!alarmaPendiente.activa) {
+    return;
+  }
+  unsigned long ahora = millis();
+  if (ahora - ultimoCambioBuzzerms < BUZZER_PARPADEO_MS) {
+    return;  // aún no es su turno
+  }
+  ultimoCambioBuzzerms = ahora;
+  buzzerEncendido = !buzzerEncendido;
+  if (buzzerEncendido) {
+    encenderBuzzer();
+    digitalWrite(PIN_LED, HIGH);
+  } else {
+    apagarBuzzer();
+    digitalWrite(PIN_LED, LOW);
+  }
+}
+
+// Empieza el ciclo de entrega: primero homing con reed, luego la dosis.
+// Enciende el patrón de buzzer/LED de inmediato para avisar sin demora.
+void iniciarCicloDosis() {
+  estadoDispensador = DISP_HOMING;
+  pasosHomingDados = 0;
+  pasosDosisRestantes = 0;
+  ultimoPasoMotorms = millis();
+  buzzerEncendido = true;
+  ultimoCambioBuzzerms = millis();
+  encenderBuzzer();
+  digitalWrite(PIN_LED, HIGH);
+  Serial.println(F("[mediclock] dispensa: homing con reed"));
+}
+
+// Cierra la entrega: apaga buzzer/LED, muestra "Dosis entregada" 1 s,
+// limpia alarmaPendiente y deja el evento listo para el POST de T4.
+// Vale tanto para fin de giro normal como para confirmación con pánico.
+void finalizarDosis() {
+  if (!alarmaPendiente.activa) {
+    return;  // sin alarma no hay nada que cerrar
+  }
+  uint8_t dia = alarmaPendiente.dia;
+  uint8_t slot = alarmaPendiente.slot;
+  uint8_t hora = alarmaPendiente.hora;
+  uint8_t minuto = alarmaPendiente.minuto;
+  apagarBuzzer();
+  digitalWrite(PIN_LED, LOW);
+  buzzerEncendido = false;
+  char linea[17];
+  snprintf(linea, sizeof(linea), "%-16s", "Dosis entregada");
+  lcd.setCursor(0, 0);
+  lcd.print(linea);
+  snprintf(linea, sizeof(linea), "%-16s", "");
+  lcd.setCursor(0, 1);
+  lcd.print(linea);
+  alarmaPendiente.activa = false;
+  encolarEventoParaEnvio(dia, slot, hora, minuto);  // T4 lo envía en su turno
+  estadoDispensador = DISP_AVISO;
+  mensajeTemporalHastaMs = millis() + DOSIS_AVISO_MS;
+  ultimaPantallaRelojms = millis();  // el reloj retoma tras el aviso
+  Serial.println(F("[mediclock] dosis entregada"));
+}
+
+// Avanza el motor sin bloquear: homing hasta el reed, luego la dosis.
+// stepper.step() se llama solo con pasos cortos (STEPPER_PASOS_POR_TURNO),
+// así cada turno dura pocos milisegundos y el resto sigue funcionando.
+void avanzarMotorSiToca() {
+  if (estadoDispensador != DISP_HOMING && estadoDispensador != DISP_DOSIS) {
+    return;
+  }
+  unsigned long ahora = millis();
+  if (ahora - ultimoPasoMotorms < STEPPER_INTERVALO_MS) {
+    return;  // aún no es el turno del motor
+  }
+  ultimoPasoMotorms = ahora;
+  if (estadoDispensador == DISP_HOMING) {
+    // El reed cierra a GND (LOW) cuando el imán del aspa llega al origen.
+    if (digitalRead(PIN_REED_SWITCH) == LOW) {
+      estadoDispensador = DISP_DOSIS;
+      pasosDosisRestantes = DISPENSAR_PASOS;
+      Serial.println(F("[mediclock] origen con reed, gira dosis"));
+      return;
+    }
+    if (pasosHomingDados >= HOMING_MAX_PASOS) {
+      // El imán nunca pasó (reed suelto o cable cortado): se dispensa
+      // igual para no trabar el equipo y se avisa por Serial.
+      Serial.println(F("[mediclock] reed sin marcar, dispensa igual"));
+      estadoDispensador = DISP_DOSIS;
+      pasosDosisRestantes = DISPENSAR_PASOS;
+      return;
+    }
+    stepper.step(STEPPER_PASOS_POR_TURNO);
+    pasosHomingDados += STEPPER_PASOS_POR_TURNO;
+    return;
+  }
+  // Estado DISP_DOSIS: avanza de a turnos hasta completar la dosis.
+  long turno = pasosDosisRestantes < STEPPER_PASOS_POR_TURNO
+      ? pasosDosisRestantes
+      : STEPPER_PASOS_POR_TURNO;
+  stepper.step((int)turno);
+  pasosDosisRestantes -= turno;
+  if (pasosDosisRestantes <= 0) {
+    finalizarDosis();
+  }
+}
+
+// Un toque sin alarma muestra el estado sin mover nada peligroso:
+// línea 0 fija + hora actual (o "SIN HORA") durante PANIC_ESTADO_MS.
+void mostrarEstadoSinAlarma() {
+  char linea[17];
+  snprintf(linea, sizeof(linea), "%-16s", "MediClock listo");
+  lcd.setCursor(0, 0);
+  lcd.print(linea);
+  if (horaValida) {
+    char texto[17];
+    snprintf(texto, sizeof(texto), "%s %02u:%02u",
+             DIAS_ES[tiempoCacheado.DayOfWeek() % 7],
+             tiempoCacheado.Hour(), tiempoCacheado.Minute());
+    snprintf(linea, sizeof(linea), "%-16s", texto);
+  } else {
+    snprintf(linea, sizeof(linea), "%-16s", "SIN HORA");
+  }
+  lcd.setCursor(0, 1);
+  lcd.print(linea);
+  mensajeTemporalHastaMs = millis() + PANIC_ESTADO_MS;
+  ultimaPantallaRelojms = millis();  // el reloj retoma tras el mensaje
+  Serial.println(F("[mediclock] panico: sin alarma, solo estado"));
+}
+
+// Lee el botón de pánico con flanco + antirebote por millis (activo en LOW,
+// pull-up externo como el reed). Sin librerías: si la lectura cambia se
+// espera PANIC_DEBOUNCE_MS estable antes de aceptar el toque.
+// Con alarma: confirma la entrega (funciona sin WiFi). Sin alarma: solo
+// muestra el estado, sin mover el motor ni sonar.
+void atenderBotonPanico() {
+  int lectura = digitalRead(PIN_PANIC_BUTTON);
+  unsigned long ahora = millis();
+  if (lectura != ultimaLecturaPanico) {
+    ultimoRebotePanicoms = ahora;  // hubo ruido o un toque real: se espera
+    ultimaLecturaPanico = lectura;
+  }
+  if (ahora - ultimoRebotePanicoms < PANIC_DEBOUNCE_MS) {
+    return;  // lectura aún inestable
+  }
+  if (estadoPanicoEstable == lectura) {
+    return;  // sin cambio confirmado
+  }
+  estadoPanicoEstable = lectura;
+  if (lectura != LOW) {
+    return;  // solo importa el flanco de presión (HIGH -> LOW)
+  }
+  if (alarmaPendiente.activa) {
+    Serial.println(F("[mediclock] panico: confirma alarma"));
+    finalizarDosis();  // silencia y dispensa igual que confirmar, sin WiFi
+  } else {
+    mostrarEstadoSinAlarma();
+  }
+}
+
+// Tarea T5 del loop: buzzer + motor + pánico, todo sin delay().
 void actualizarActuadores() {
-  // TODO(T5): llevar a origen con reed (PIN_REED_SWITCH, activo en LOW),
-  // giro por pasos sin bloquear, patrón de buzzer por LEDC y
-  // botón de pánico (PIN_PANIC_BUTTON) que dispensa sin WiFi.
+  atenderBotonPanico();  // primero: el pánico puede cerrar una alarma
+  if (alarmaPendiente.activa && estadoDispensador == DISP_EN_REPOSO) {
+    iniciarCicloDosis();
+  }
+  actualizarBuzzerAlarma();  // patrón 500 ms on/off + LED a la par
+  avanzarMotorSiToca();      // homing con reed + dosis por pasos cortos
+  if (estadoDispensador == DISP_AVISO && millis() >= mensajeTemporalHastaMs) {
+    estadoDispensador = DISP_EN_REPOSO;  // aviso cumplido, el reloj retoma
+  }
+  if (!alarmaPendiente.activa && estadoDispensador == DISP_EN_REPOSO && buzzerEncendido) {
+    apagarBuzzer();  // seguridad: sin alarma nunca queda sonando
+    digitalWrite(PIN_LED, LOW);
+    buzzerEncendido = false;
+  }
 }
 
 // --------------------------------------------------------------- Arranque

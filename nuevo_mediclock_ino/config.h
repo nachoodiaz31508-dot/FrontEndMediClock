@@ -69,12 +69,25 @@
 #define NTP_SYNC_INTERVAL_MS (6UL * 3600UL * 1000UL)  // reintento cada 6 h
 
 // --------------------------------------------------- Tiempos del sistema
-#define RTC_CACHE_INTERVAL_MS   1000   // T2: releer el RTC una vez por segundo
-#define LCD_REFRESH_INTERVAL_MS 1000   // T2: redibujar el reloj del LCD
+#define RTC_CACHE_INTERVAL_MS   1000   // T2: releer el RTC una vez por segundo#define LCD_REFRESH_INTERVAL_MS 1000   // T2: redibujar el reloj del LCD
 #define LCD_SYNC_AVISO_MS       2000   // T2: mostrar "SYNC" tras sincronizar
 #define NTP_REINTENTO_SIN_HORA_MS (30UL * 1000UL) // T2: reintento NTP sin hora válida
 #define WIFI_RETRY_INTERVAL_MS  10000  // T4: ventana de reintento WiFi sin bloquear
 #define ALARMS_FETCH_INTERVAL_MS (5UL * 60UL * 1000UL) // T4: GET /alarmas cada 5 min
 #define HTTP_TIMEOUT_MS         5000   // T4: tope de espera de GET/POST, sin bloquear
+
+// --------------------------------------------------- T5: actuadores
+// Pasos de dosis: giro del 28BYJ-48 tras llegar al origen.
+// Valor inicial igual al firmware original (273 pasos).
+// SE CALIBRA con las aspas: ajustar hasta que caiga una sola dosis.
+#define DISPENSAR_PASOS         273
+#define STEPPER_PASOS_POR_TURNO 8      // T5: pasos cortos por turno, sin bloquear
+#define STEPPER_INTERVALO_MS    10     // T5: pausa entre turnos del motor
+#define HOMING_MAX_PASOS        2048   // T5: tope de homing (una vuelta); evita giro infinito
+#define BUZZER_PARPADEO_MS      500    // T5: patrón intermitente on/off del buzzer
+#define BUZZER_DUTY             128    // T5: volumen del buzzer (0-255, 8 bits)
+#define PANIC_DEBOUNCE_MS       50     // T5: antirebote del botón de pánico
+#define DOSIS_AVISO_MS          1000   // T5: "Dosis entregada" en pantalla
+#define PANIC_ESTADO_MS         2000   // T5: mensaje de estado del botón sin alarma
 
 #endif // MEDICLOCK_CONFIG_H
