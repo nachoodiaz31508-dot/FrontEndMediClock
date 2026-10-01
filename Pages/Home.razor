@@ -4,6 +4,7 @@
 @using FrontEndMediClock.Servicios
 @inject ApiMediClock Api
 @inject EstadoDispositivo Estado
+@inject PreferenciasLocales Prefs
 @implements IDisposable
 
 <PageTitle>MediClock - Alarmas</PageTitle>
@@ -12,7 +13,24 @@
    e historial de eventos. El backend es la fuente de verdad: despues
    de cada cambio se recarga la configuracion completa. *@
 
-<h1>Alarmas del pastillero</h1>
+<h1>Alarmas de pastillero@(string.IsNullOrWhiteSpace(nombrePaciente) ? "" : $" {nombrePaciente.Trim()}")</h1>
+
+@* Nombre del paciente solo-front (localStorage).
+   Reserva: cuando el backend exponga perfiles reales, el titulo
+   usara el perfil del servidor y este campo desaparecera. *@
+<section class="mc-selector">
+    <div class="mc-config-fila">
+        <label>
+            Nombre del paciente:
+            <input @bind="nombrePaciente" placeholder="Ej. Maria" maxlength="60" />
+        </label>
+        <button class="mc-boton mc-boton-secundario" @onclick="GuardarNombrePaciente">Guardar nombre</button>
+    </div>
+    @if (nombreGuardado)
+    {
+        <span class="mc-detalle">Nombre guardado en este navegador.</span>
+    }
+</section>
 
 <section class="mc-selector">
     <SelectorDispositivo />
@@ -33,8 +51,22 @@ else if (config is not null)
     <section class="mc-tarjetas">
         <div class="mc-tarjeta">
             <span class="mc-tarjeta-titulo">Dispositivo</span>
-            <strong>@config.nombre</strong>
+            <strong>@NombreVisibleDispositivo()</strong>
+            @if (AliasDifiere())
+            {
+                <span class="mc-detalle">Nombre del servidor: @config.nombre</span>
+            }
             <span class="mc-detalle">id=@config.dispositivoId</span>
+            @* Alias solo-front (localStorage por dispositivoId): no llama al PUT
+               del backend; el nombre real del servidor se conserva arriba. *@
+            <div class="mc-alias-fila">
+                <input @bind="aliasBorrador" placeholder="Alias para mostrar" maxlength="60" />
+                <button class="mc-boton mc-boton-secundario" @onclick="GuardarAlias">Guardar alias</button>
+                @if (!string.IsNullOrWhiteSpace(aliasDispositivo))
+                {
+                    <button class="mc-boton mc-boton-secundario" @onclick="QuitarAlias">Quitar</button>
+                }
+            </div>
         </div>
         <div class="mc-tarjeta mc-tarjeta-acento">
             <span class="mc-tarjeta-titulo">Cantidad de alarmas</span>
@@ -216,6 +248,12 @@ else if (config is not null)
     private int? editandoId;
     private Alarma? alarmaABorrar;
 
+    // Preferencias solo-front: nombre del paciente y alias por dispositivo.
+    private string nombrePaciente = string.Empty;
+    private bool nombreGuardado = false;
+    private string aliasDispositivo = string.Empty;
+    private string aliasBorrador = string.Empty;
+
     // Historial T5: lista acumulada, pagina actual y tamanio fijo de 20.
     private List<Evento> eventos = new();
     private int paginaEventos = 1;
@@ -227,6 +265,7 @@ else if (config is not null)
     protected override async Task OnInitializedAsync()
     {
         Estado.Cambio += AlCambiarDispositivo;
+        nombrePaciente = await Prefs.ObtenerNombrePaciente() ?? string.Empty;
         await Cargar();
     }
 
@@ -243,6 +282,8 @@ else if (config is not null)
         try
         {
             config = await Api.ObtenerConfiguracion(Estado.DispositivoId);
+            aliasDispositivo = await Prefs.ObtenerAlias(Estado.DispositivoId) ?? string.Empty;
+            aliasBorrador = aliasDispositivo;
             await CargarEventos(reiniciar: true);
         }
         catch (ExcepcionApi ex)
@@ -354,6 +395,46 @@ else if (config is not null)
         7 => "Domingo",
         _ => $"Dia {dia}",
     };
+
+    // Nombre del paciente solo-front: se guarda en localStorage.
+    private async Task GuardarNombrePaciente()
+    {
+        nombrePaciente = nombrePaciente.Trim();
+        await Prefs.GuardarNombrePaciente(nombrePaciente);
+        nombreGuardado = true;
+    }
+
+    // Alias solo-front por dispositivoId: cambia lo que se muestra,
+    // sin llamar al PUT del backend.
+    private async Task GuardarAlias()
+    {
+        aliasDispositivo = aliasBorrador.Trim();
+        aliasBorrador = aliasDispositivo;
+        await Prefs.GuardarAlias(Estado.DispositivoId, aliasDispositivo);
+    }
+
+    private async Task QuitarAlias()
+    {
+        aliasDispositivo = string.Empty;
+        aliasBorrador = string.Empty;
+        await Prefs.GuardarAlias(Estado.DispositivoId, string.Empty);
+    }
+
+    private string NombreVisibleDispositivo()
+    {
+        if (config is null)
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(aliasDispositivo) ? config.nombre : aliasDispositivo.Trim();
+    }
+
+    // El nombre real del backend se muestra como secundario si difiere.
+    private bool AliasDifiere() =>
+        config is not null
+        && !string.IsNullOrWhiteSpace(aliasDispositivo)
+        && aliasDispositivo.Trim() != config.nombre;
 
     private void EmpezarEdicion(Alarma alarma)
     {

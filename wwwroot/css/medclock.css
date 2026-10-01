@@ -86,10 +86,37 @@ body {
     max-width: 320px;
 }
 
-.mc-campo input {
+.mc-campo input,
+.mc-campo select {
     border: 1px solid #94a3b8;
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
+}
+
+.mc-config-fila,
+.mc-alias-fila {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.mc-config-fila label,
+.mc-alias-fila input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mc-config-fila input,
+.mc-alias-fila input {
+    border: 1px solid #94a3b8;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+}
+
+.mc-alias-fila {
+    margin-top: 0.5rem;
 }
 
 .mc-boton {

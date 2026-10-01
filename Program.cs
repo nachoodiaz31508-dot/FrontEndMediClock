@@ -13,5 +13,6 @@ var baseUrl = builder.Configuration["MediClock:BaseUrl"] ?? "https://mediclockba
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") });
 builder.Services.AddScoped<ApiMediClock>();
 builder.Services.AddScoped<EstadoDispositivo>();
+builder.Services.AddScoped<PreferenciasLocales>();
 
 await builder.Build().RunAsync();
