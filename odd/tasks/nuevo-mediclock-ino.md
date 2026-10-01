@@ -63,3 +63,4 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 ## Decisiones
 - Reescritura desde cero aceptada: preserva ideas probadas, descarta defines UNO.
 - Convención firmware: igual que front — español neutro/profesional en dominio (nombres, declaraciones, comentarios), ordenado y didáctico simple. T1 quedó en inglés y se adapta desde T2.
+- README con etiquetas DEVKIT V1 (Dnn = GPIOnn) + diagrama ASCII, a pedido para cableado físico.

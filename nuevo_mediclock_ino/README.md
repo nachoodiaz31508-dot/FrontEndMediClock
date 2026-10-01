@@ -30,24 +30,47 @@ El RTC se lee como máximo una vez por segundo (dato en memoria, T2).
 
 ## Tabla de cableado final
 
-| Parte | Pin ESP32 | Notas |
-| --- | --- | --- |
-| LCD 16x2 I2C (PCF8574) SDA | GPIO21 | Bus I2C por hardware, dir. `0x27` |
-| LCD 16x2 I2C (PCF8574) SCL | GPIO22 | Bus I2C por hardware |
-| DS1302 DAT | GPIO19 | Lógica 3,3 V; Vcc del módulo según su hoja de datos, GND común |
-| DS1302 CLK | GPIO18 | — |
-| DS1302 RST (CE) | GPIO5 | Pin de arranque: debe leer HIGH al encender. La línea queda en LOW y solo sube durante cada lectura; el pull-up de placa la mantiene en HIGH al arrancar. Nunca a GND |
-| Motor IN1 (ULN2003) | GPIO13 | Vía ULN2003, ver alimentación |
-| Motor IN2 (ULN2003) | GPIO12 | Pin de arranque (MTDI): debe leer LOW al encender. La entrada del ULN2003 queda en LOW al arrancar — NO agregar pull-up externo aquí |
-| Motor IN3 (ULN2003) | GPIO14 | — |
-| Motor IN4 (ULN2003) | GPIO27 | — |
-| Reed (final de carrera) | GPIO34 | Solo entrada, sin pull-up interno: **pull-up externo de 10 k a 3V3 sí o sí**. El contacto cierra a GND (activo en LOW) |
-| Botón de pánico | GPIO35 | Igual que el reed: solo entrada, **pull-up externo de 10 k a 3V3**, activo en LOW |
-| LED de estado | GPIO23 | Activo en HIGH (usar serie de 220 Ω) |
-| Buzzer pasivo | GPIO26 | Por PWM LEDC canal 0 a 2 kHz |
+| Parte | Pin ESP32 (GPIO) | Etiqueta en DEVKIT V1 | Notas |
+| --- | --- | --- | --- |
+| LCD 16x2 I2C (PCF8574) SDA | GPIO21 | D21 | Bus I2C por hardware, dir. `0x27` |
+| LCD 16x2 I2C (PCF8574) SCL | GPIO22 | D22 | Bus I2C por hardware |
+| DS1302 DAT | GPIO19 | D19 | Lógica 3,3 V; Vcc del módulo según su hoja de datos, GND común |
+| DS1302 CLK | GPIO18 | D18 | — |
+| DS1302 RST (CE) | GPIO5 | D5 | Pin de arranque: debe leer HIGH al encender. La línea queda en LOW y solo sube durante cada lectura; el pull-up de placa la mantiene en HIGH al arrancar. Nunca a GND |
+| Motor IN1 (ULN2003) | GPIO13 | D13 | Vía ULN2003, ver alimentación |
+| Motor IN2 (ULN2003) | GPIO12 | D12 | Pin de arranque (MTDI): debe leer LOW al encender. La entrada del ULN2003 queda en LOW al arrancar — NO agregar pull-up externo aquí |
+| Motor IN3 (ULN2003) | GPIO14 | D14 | — |
+| Motor IN4 (ULN2003) | GPIO27 | D27 | — |
+| Reed (final de carrera) | GPIO34 | D34 | Solo entrada, sin pull-up interno: **pull-up externo de 10 k a 3V3 sí o sí**. El contacto cierra a GND (activo en LOW) |
+| Botón de pánico | GPIO35 | D35 | Igual que el reed: solo entrada, **pull-up externo de 10 k a 3V3**, activo en LOW |
+| LED de estado | GPIO23 | D23 | Activo en HIGH (usar serie de 220 Ω) |
+| Buzzer pasivo | GPIO26 | D26 | Por PWM LEDC canal 0 a 2 kHz |
 
 No usados: GPIO6–GPIO11 (flash SPI interna), GPIO0/GPIO2/GPIO15 (arranque, se
 dejan libres para un encendido confiable).
+
+## Diagrama para DEVKIT V1 (etiquetas de placa)
+
+En la DEVKIT V1 la etiqueta `Dnn` es el GPIO `nn` (`D21` = GPIO21).
+`RX2` = GPIO16 y `TX2` = GPIO17 quedan libres como repuesto. Alimentar la placa
+por USB y el motor por su fuente de 5 V, con GND común entre ambas.
+
+```text
+                    +---------------- ESP32 DEVKIT V1 ----------------+
+                    |                                                 |
+  LCD SDA --------> | D21                                    3V3 | --+-- pull-up 10k --> D34 (reed) --> reed --> GND
+  LCD SCL --------> | D22                                    3V3 | --+-- pull-up 10k --> D35 (pánico) --> botón --> GND
+  DS1302 DAT -----> | D19                                     D23 | --> LED (+ serie 220) --> GND
+  DS1302 CLK -----> | D18                                     D26 | --> buzzer (+) (el otro a GND)
+  DS1302 RST -----> | D5  (arranque: nunca a GND)              D13 | --> ULN2003 IN1
+                    | D12  (arranque: sin pull-up) ----------> | IN2 (motor, fuente 5 V separada)
+                    | D14 -----------------------------------> | IN3
+                    | D27 -----------------------------------> | IN4
+                    | GND -----------------------------------> | GND común (placa + motor + módulos)
+                    +--------------------------------------------------+
+  LCD VCC -> 5V placa · LCD GND -> GND · DS1302 VCC/GND según módulo (GND común)
+  ULN2003 COM -> 5 V del motor · ULN2003 GND -> GND común · RX2/TX2 libres
+```
 
 ## Alimentación
 
