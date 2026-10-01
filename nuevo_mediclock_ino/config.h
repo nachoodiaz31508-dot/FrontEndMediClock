@@ -69,7 +69,8 @@
 #define NTP_SYNC_INTERVAL_MS (6UL * 3600UL * 1000UL)  // reintento cada 6 h
 
 // --------------------------------------------------- Tiempos del sistema
-#define RTC_CACHE_INTERVAL_MS   1000   // T2: releer el RTC una vez por segundo#define LCD_REFRESH_INTERVAL_MS 1000   // T2: redibujar el reloj del LCD
+#define RTC_CACHE_INTERVAL_MS   1000   // T2: releer el RTC una vez por segundo
+#define LCD_REFRESH_INTERVAL_MS 1000   // T2: redibujar el reloj del LCD
 #define LCD_SYNC_AVISO_MS       2000   // T2: mostrar "SYNC" tras sincronizar
 #define NTP_REINTENTO_SIN_HORA_MS (30UL * 1000UL) // T2: reintento NTP sin hora válida
 #define WIFI_RETRY_INTERVAL_MS  10000  // T4: ventana de reintento WiFi sin bloquear

@@ -3,6 +3,7 @@
 // Sin delay() en loop(). Sin menú por botones. Sin EEPROM (se usa NVS con Preferences).
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
