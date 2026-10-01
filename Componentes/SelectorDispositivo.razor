@@ -2,9 +2,13 @@
 @using FrontEndMediClock.Servicios
 @inject ApiMediClock Api
 @inject EstadoDispositivo Estado
+@inject PreferenciasLocales Prefs
+@implements IDisposable
 
 @* Selector minimo de dispositivo: lista real del backend y guarda la
-   seleccion en EstadoDispositivo para que T4/T5 la reutilicen. *@
+   seleccion en EstadoDispositivo para que T4/T5 la reutilicen.
+   Cada opcion muestra el alias solo-front cuando existe,
+   ej. "Probando (id=1)"; si no hay alias, nombre del servidor. *@
 
 @if (cargando)
 {
@@ -21,7 +25,7 @@ else
         <select value="@Estado.DispositivoId" @onchange="AlCambiar">
             @foreach (var d in dispositivos)
             {
-                <option value="@d.dispositivoId">@d.nombre (id=@d.dispositivoId)</option>
+                <option value="@d.dispositivoId">@TextoOpcion(d)</option>
             }
         </select>
     </label>
@@ -32,8 +36,12 @@ else
     private bool cargando = true;
     private string? error;
 
+    // Alias solo-front por dispositivoId (localStorage).
+    private Dictionary<int, string> aliases = new();
+
     protected override async Task OnInitializedAsync()
     {
+        Estado.Cambio += AlCambiarEstado;
         try
         {
             dispositivos = await Api.ListarDispositivos();
@@ -42,6 +50,7 @@ else
             {
                 Estado.Seleccionar(dispositivos[0].dispositivoId);
             }
+            await CargarAliases();
         }
         catch (ExcepcionApi ex)
         {
@@ -53,11 +62,45 @@ else
         }
     }
 
+    // Recarga los alias cuando otro componente avisa (ej. guardar alias).
+    private async void AlCambiarEstado()
+    {
+        await CargarAliases();
+        StateHasChanged();
+    }
+
+    private async Task CargarAliases()
+    {
+        foreach (var d in dispositivos)
+        {
+            var alias = await Prefs.ObtenerAlias(d.dispositivoId);
+            if (string.IsNullOrWhiteSpace(alias))
+            {
+                aliases.Remove(d.dispositivoId);
+            }
+            else
+            {
+                aliases[d.dispositivoId] = alias.Trim();
+            }
+        }
+    }
+
+    // Texto de cada opcion: alias cuando existe, si no nombre del servidor.
+    private string TextoOpcion(Dispositivo d) =>
+        aliases.TryGetValue(d.dispositivoId, out var alias)
+            ? $"{alias} (id={d.dispositivoId})"
+            : $"{d.nombre} (id={d.dispositivoId})";
+
     private void AlCambiar(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out var id))
         {
             Estado.Seleccionar(id);
         }
+    }
+
+    public void Dispose()
+    {
+        Estado.Cambio -= AlCambiarEstado;
     }
 }

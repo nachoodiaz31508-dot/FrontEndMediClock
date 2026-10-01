@@ -15,20 +15,28 @@
 
 <h1>Alarmas de pastillero@(string.IsNullOrWhiteSpace(nombrePaciente) ? "" : $" {nombrePaciente.Trim()}")</h1>
 
-@* Nombre del paciente solo-front (localStorage).
+@* Nombre del paciente solo-front (localStorage), en seccion colapsable
+   con el mismo patron que el formulario de alarma. El titulo principal
+   sigue mostrando el nombre.
    Reserva: cuando el backend exponga perfiles reales, el titulo
    usara el perfil del servidor y este campo desaparecera. *@
 <section class="mc-selector">
-    <div class="mc-config-fila">
-        <label>
-            Nombre del paciente:
-            <input @bind="nombrePaciente" placeholder="Ej. Maria" maxlength="60" />
-        </label>
-        <button class="mc-boton mc-boton-secundario" @onclick="GuardarNombrePaciente">Guardar nombre</button>
-    </div>
-    @if (nombreGuardado)
+    <button class="mc-boton mc-boton-secundario" @onclick="AlternarPaciente">
+        @(pacienteVisible ? "Ocultar paciente" : string.IsNullOrWhiteSpace(nombrePaciente) ? "Paciente" : $"Paciente: {nombrePaciente.Trim()}")
+    </button>
+    @if (pacienteVisible)
     {
-        <span class="mc-detalle">Nombre guardado en este navegador.</span>
+        <div class="mc-config-fila">
+            <label>
+                Nombre del paciente:
+                <input @bind="nombrePaciente" placeholder="Ej. Maria" maxlength="60" />
+            </label>
+            <button class="mc-boton mc-boton-secundario" @onclick="GuardarNombrePaciente">Guardar nombre</button>
+        </div>
+        @if (nombreGuardado)
+        {
+            <span class="mc-detalle">Nombre guardado en este navegador.</span>
+        }
     }
 </section>
 
@@ -280,6 +288,7 @@ else if (config is not null)
     // Preferencias solo-front: nombre del paciente y alias por dispositivo.
     private string nombrePaciente = string.Empty;
     private bool nombreGuardado = false;
+    private bool pacienteVisible = false;
     private string aliasDispositivo = string.Empty;
     private string aliasBorrador = string.Empty;
 
@@ -433,13 +442,20 @@ else if (config is not null)
         nombreGuardado = true;
     }
 
+    private void AlternarPaciente()
+    {
+        pacienteVisible = !pacienteVisible;
+    }
+
     // Alias solo-front por dispositivoId: cambia lo que se muestra,
-    // sin llamar al PUT del backend.
+    // sin llamar al PUT del backend. Avisa para que el selector
+    // relea el alias en sus opciones.
     private async Task GuardarAlias()
     {
         aliasDispositivo = aliasBorrador.Trim();
         aliasBorrador = aliasDispositivo;
         await Prefs.GuardarAlias(Estado.DispositivoId, aliasDispositivo);
+        Estado.Notificar();
     }
 
     private async Task QuitarAlias()
@@ -447,6 +463,7 @@ else if (config is not null)
         aliasDispositivo = string.Empty;
         aliasBorrador = string.Empty;
         await Prefs.GuardarAlias(Estado.DispositivoId, string.Empty);
+        Estado.Notificar();
     }
 
     private string NombreVisibleDispositivo()

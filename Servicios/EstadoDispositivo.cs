@@ -18,4 +18,11 @@ public class EstadoDispositivo
         DispositivoId = id;
         Cambio?.Invoke();
     }
+
+    // Aviso sin cambio de dispositivo (ej. se guardo un alias solo-front
+    // y el selector debe releer localStorage). No toca el backend.
+    public void Notificar()
+    {
+        Cambio?.Invoke();
+    }
 }
