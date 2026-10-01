@@ -34,6 +34,7 @@ Out of scope: auth, multi-usuario, ESP firmware, cambios backend.
 - [x] T5: UI historial eventos con paginacion + manejo errores
 - [x] T5b: Fix dia 1=lunes..7=domingo + logo en header/nav/favicon
 - [x] T6: Crear repo privado FrontEndMediClock, commit inicial y push
+- [x] T7: Puntos front-only 4-7 (titulo con paciente, alias local, rediseno 2 columnas, formulario dia/hora amable)
 
 ## Authorized scope
 Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sistema; crear repo privado GitHub FrontEndMediClock via gh default auth. Push y PRs futuros a decision del usuario.
@@ -64,6 +65,7 @@ Carpeta /home/joacoynacho/proyectos/MediClock para scaffold; instalacion SDK sis
 - T5 (2026-09-30): `dotnet build` verde (0 advertencias, 0 errores, 15.08s). Seccion Historial en Home: tabla fechaHora/tipo/descripcion/alarma, tamanio 20, boton Cargar mas, error string[] en español, vacio amable, recarga al cambiar dispositivo. Smoke prod: GET `api/dispositivos/1/configuracion` -> ESP_32_Prueba (1 alarma dia 2 = martes); GET `api/dispositivos/1/eventos?pagina=1&tamanioPagina=20` -> 2 eventos (AlarmaActivada, DosisEntregada).
 - Fix dia (2026-09-30): backend valida "entre 1 y 7 (Lunes a Domingo)" (400 probado con dia 8 y 0). Comentario Alarma.cs 1=lunes..7=domingo; Proxima usa ((DayOfWeek+6)%7)+1; nombres Lunes..Domingo en tarjeta/lista/borrado/formulario.
 - Logo (2026-09-30): `wwwroot/img/mediclock-logo.png` en header MainLayout + NavMenu (img con alt "Logotipo de MediClock"); favicon apunta al logo (favicon.png queda como respaldo en wwwroot).
+- T7 (2026-10-01, puntos 4-7 solo-front, sin backend/firmware): `dotnet build` verde (0 advertencias, 0 errores). Titulo "Alarmas de pastillero NOMBRE" con paciente editable en localStorage (`mediclock.nombrePaciente`, reserva comentada para perfil real del back). Alias por dispositivo en localStorage (`mediclock.alias.{id}`) sin PUT; nombre real del servidor como secundario si difiere. Rediseno: boton celeste #29b6d1 despliega formulario compartido crear/editar a la izquierda, lista compacta a la derecha, apilado en mobile (<=768px). Formulario: dia por nombre Lunes..Domingo (1-7), hora type=time convertida a HH:mm:ss; validaciones y 409 amable intactos. Commits `feat: nombre de paciente y alias...` + `feat: rediseno...` en main. Smoke prod: GET `api/dispositivos/1/configuracion` -> ESP_32_Prueba (2 alarmas: dia 2 nro 1 08:00:00, dia 3 nro 2 15:00:00); GET eventos pagina 1 -> 200.
 
 ## Next step
 - T5 done. MVP frontend completo (T1-T6 + fix dia + logo). Sigue deploy o mejoras a decision del usuario.

@@ -96,85 +96,108 @@ else if (config is not null)
         <p class="mc-error">@mensajeError</p>
     }
 
-    @* Lista ordenada por dia y numero para facilitar la lectura semanal. *@
-    <section>
-        <h2>Lista de alarmas</h2>
-        @if (AlarmasOrdenadas().Count == 0)
-        {
-            <p>Todavia no hay alarmas para este dispositivo.</p>
-        }
-        else
-        {
-            <ul class="mc-lista">
-                @foreach (var alarma in AlarmasOrdenadas())
-                {
-                    <li class="mc-item">
-                        <span>
-                            <strong>@NombreDia(alarma.diaSemana)</strong>
-                            · nro @alarma.numeroAlarma
-                            · @alarma.hora
-                        </span>
-                        <span class="mc-acciones">
-                            <button class="mc-boton mc-boton-secundario" @onclick="() => EmpezarEdicion(alarma)">Editar</button>
-                            <button class="mc-boton mc-boton-peligro" @onclick="() => PedirConfirmacion(alarma)">Borrar</button>
-                        </span>
-                    </li>
-                }
-            </ul>
-        }
-
-        @* Confirmacion en dos pasos antes de borrar: evita toques accidentales. *@
-        @if (alarmaABorrar is not null)
-        {
-            <div class="mc-confirmar">
-                <p>¿Borrar la alarma del @NombreDia(alarmaABorrar.diaSemana).ToLower(), nro @alarmaABorrar.numeroAlarma (@alarmaABorrar.hora)?</p>
-                <button class="mc-boton mc-boton-peligro" @onclick="ConfirmarBorrado">Si, borrar</button>
-                <button class="mc-boton mc-boton-secundario" @onclick="CancelarBorrado">Cancelar</button>
-            </div>
-        }
-    </section>
-
-    @* Formulario compartido para crear y editar. La validacion
-       client-side evita viajes al servidor con datos invalidos. *@
-    <section>
-        <h2>@(editandoId is null ? "Crear alarma" : "Editar alarma")</h2>
-        <EditForm Model="formulario" OnValidSubmit="Guardar">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
-            <div class="mc-campo">
-                <label>
-                    Dia de semana (1 = lunes, 7 = domingo):
-                    <InputNumber @bind-Value="formulario.diaSemana" min="1" max="7" />
-                </label>
-                <ValidationMessage For="() => formulario.diaSemana" />
-            </div>
-            <div class="mc-campo">
-                <label>
-                    Numero de alarma (1 a 3):
-                    <InputNumber @bind-Value="formulario.numeroAlarma" min="1" max="3" />
-                </label>
-                <ValidationMessage For="() => formulario.numeroAlarma" />
-            </div>
-            <div class="mc-campo">
-                <label>
-                    Hora (HH:mm:ss):
-                    <InputText @bind-Value="formulario.hora" placeholder="08:00:00" />
-                </label>
-                <ValidationMessage For="() => formulario.hora" />
-            </div>
-            @if (errorFormulario is not null)
-            {
-                <p class="mc-error">@errorFormulario</p>
-            }
-            <button type="submit" class="mc-boton mc-boton-primario" disabled="@guardando">
-                @(guardando ? "Guardando..." : editandoId is null ? "Crear alarma" : "Guardar cambios")
+    @* Disposicion en dos columnas: a la izquierda el boton celeste que
+       despliega el formulario compartido crear/editar; a la derecha la
+       lista compacta. En mobile se apilan (ver medclock.css). *@
+    <div class="mc-alarmas-layout">
+        <div class="mc-panel">
+            <button class="mc-boton mc-boton-celeste" @onclick="AlternarFormulario">
+                @(formularioVisible ? "Ocultar formulario" : editandoId is null ? "Nueva alarma" : "Editar alarma")
             </button>
-            @if (editandoId is not null)
+            @if (formularioVisible)
             {
-                <button type="button" class="mc-boton mc-boton-secundario" @onclick="CancelarEdicion">Cancelar</button>
+                @* Formulario compartido para crear y editar. El dia se elige
+                   por nombre (1 = lunes .. 7 = domingo) y la hora con un
+                   selector amable que se convierte a HH:mm:ss al enviar. *@
+                <h2>@(editandoId is null ? "Crear alarma" : "Editar alarma")</h2>
+                <EditForm Model="formulario" OnValidSubmit="Guardar">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <div class="mc-campo">
+                        <label>
+                            Dia de semana:
+                            <InputSelect @bind-Value="formulario.diaSemana">
+                                <option value="1">Lunes</option>
+                                <option value="2">Martes</option>
+                                <option value="3">Miercoles</option>
+                                <option value="4">Jueves</option>
+                                <option value="5">Viernes</option>
+                                <option value="6">Sabado</option>
+                                <option value="7">Domingo</option>
+                            </InputSelect>
+                        </label>
+                        <ValidationMessage For="() => formulario.diaSemana" />
+                    </div>
+                    <div class="mc-campo">
+                        <label>
+                            Numero de alarma (1 a 3):
+                            <InputNumber @bind-Value="formulario.numeroAlarma" min="1" max="3" />
+                        </label>
+                        <ValidationMessage For="() => formulario.numeroAlarma" />
+                    </div>
+                    <div class="mc-campo">
+                        <label>
+                            Hora:
+                            <input type="time" value="@horaCorta" @onchange="AlCambiarHora" required />
+                        </label>
+                        @if (errorHora is not null)
+                        {
+                            <p class="mc-error">@errorHora</p>
+                        }
+                    </div>
+                    @if (errorFormulario is not null)
+                    {
+                        <p class="mc-error">@errorFormulario</p>
+                    }
+                    <button type="submit" class="mc-boton mc-boton-primario" disabled="@guardando">
+                        @(guardando ? "Guardando..." : editandoId is null ? "Crear alarma" : "Guardar cambios")
+                    </button>
+                    @if (editandoId is not null)
+                    {
+                        <button type="button" class="mc-boton mc-boton-secundario" @onclick="CancelarEdicion">Cancelar</button>
+                    }
+                </EditForm>
             }
-        </EditForm>
-    </section>
+        </div>
+
+        @* Lista compacta ordenada por dia y numero. *@
+        <section class="mc-lista-panel">
+            <h2>Lista de alarmas</h2>
+            @if (AlarmasOrdenadas().Count == 0)
+            {
+                <p>Todavia no hay alarmas para este dispositivo.</p>
+            }
+            else
+            {
+                <ul class="mc-lista mc-lista-compacta">
+                    @foreach (var alarma in AlarmasOrdenadas())
+                    {
+                        <li class="mc-item">
+                            <span>
+                                <strong>@NombreDia(alarma.diaSemana)</strong>
+                                · nro @alarma.numeroAlarma
+                                · @alarma.hora
+                            </span>
+                            <span class="mc-acciones">
+                                <button class="mc-boton mc-boton-secundario" @onclick="() => EmpezarEdicion(alarma)">Editar</button>
+                                <button class="mc-boton mc-boton-peligro" @onclick="() => PedirConfirmacion(alarma)">Borrar</button>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @* Confirmacion en dos pasos antes de borrar: evita toques accidentales. *@
+            @if (alarmaABorrar is not null)
+            {
+                <div class="mc-confirmar">
+                    <p>¿Borrar la alarma del @NombreDia(alarmaABorrar.diaSemana).ToLower(), nro @alarmaABorrar.numeroAlarma (@alarmaABorrar.hora)?</p>
+                    <button class="mc-boton mc-boton-peligro" @onclick="ConfirmarBorrado">Si, borrar</button>
+                    <button class="mc-boton mc-boton-secundario" @onclick="CancelarBorrado">Cancelar</button>
+                </div>
+            }
+        </section>
+    </div>
 
     @* Historial de eventos T5: tabla simple con paginacion por boton.
        El servidor pagina desde 1; cada clic trae 20 mas y los agrega. *@
@@ -247,6 +270,12 @@ else if (config is not null)
     private Alarma formulario = NuevaAlarmaVacia();
     private int? editandoId;
     private Alarma? alarmaABorrar;
+
+    // Panel colapsable del formulario + hora amable (HH:mm) que se
+    // convierte al formato contractual HH:mm:ss al enviar.
+    private bool formularioVisible = false;
+    private string horaCorta = "08:00";
+    private string? errorHora;
 
     // Preferencias solo-front: nombre del paciente y alias por dispositivo.
     private string nombrePaciente = string.Empty;
@@ -436,6 +465,20 @@ else if (config is not null)
         && !string.IsNullOrWhiteSpace(aliasDispositivo)
         && aliasDispositivo.Trim() != config.nombre;
 
+    private void AlCambiarHora(ChangeEventArgs e)
+    {
+        horaCorta = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void AlternarFormulario()
+    {
+        formularioVisible = !formularioVisible;
+        if (!formularioVisible)
+        {
+            CancelarEdicion();
+        }
+    }
+
     private void EmpezarEdicion(Alarma alarma)
     {
         editandoId = alarma.alarmaId;
@@ -443,19 +486,25 @@ else if (config is not null)
         mensajeExito = null;
         mensajeError = null;
         errorFormulario = null;
+        errorHora = null;
+        formularioVisible = true;
         formulario = new Alarma
         {
             diaSemana = alarma.diaSemana,
             numeroAlarma = alarma.numeroAlarma,
             hora = alarma.hora,
         };
+        horaCorta = alarma.hora.Length >= 5 ? alarma.hora.Substring(0, 5) : "08:00";
     }
 
     private void CancelarEdicion()
     {
         editandoId = null;
         errorFormulario = null;
+        errorHora = null;
+        formularioVisible = false;
         formulario = NuevaAlarmaVacia();
+        horaCorta = "08:00";
     }
 
     private void PedirConfirmacion(Alarma alarma)
@@ -483,6 +532,29 @@ else if (config is not null)
             return;
         }
 
+        // Convierte la hora amable (HH:mm) al formato contractual HH:mm:ss.
+        errorHora = null;
+        if (string.IsNullOrWhiteSpace(horaCorta))
+        {
+            errorHora = "La hora es obligatoria.";
+            return;
+        }
+
+        var horaNormalizada = horaCorta.Trim();
+        if (horaNormalizada.Length == 5)
+        {
+            horaNormalizada += ":00";
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(
+                horaNormalizada, @"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$"))
+        {
+            errorHora = "La hora debe tener un formato valido (HH:mm).";
+            return;
+        }
+
+        formulario.hora = horaNormalizada;
+
         var duplicada = config.alarmas.Any(a =>
             a.diaSemana == formulario.diaSemana
             && a.numeroAlarma == formulario.numeroAlarma
@@ -500,14 +572,18 @@ else if (config is not null)
             {
                 await Api.ActualizarAlarma(Estado.DispositivoId, id, formulario);
                 mensajeExito = "Alarma actualizada correctamente.";
+                CancelarEdicion();
             }
             else
             {
                 await Api.CrearAlarma(Estado.DispositivoId, formulario);
                 mensajeExito = "Alarma creada correctamente.";
+                errorFormulario = null;
+                errorHora = null;
+                formulario = NuevaAlarmaVacia();
+                horaCorta = "08:00";
             }
 
-            CancelarEdicion();
             await Cargar();
         }
         catch (ExcepcionApi ex) when (ex.Codigo == 409)
