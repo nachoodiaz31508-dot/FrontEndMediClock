@@ -51,6 +51,19 @@ struct AvisoAlarma {
 };
 AvisoAlarma alarmaPendiente;
 
+// T4: evento listo para avisar al back. T5 lo llena al dispensar
+// (con encolarEventoParaEnvio) y el POST de T4 lo vacía al lograr 200/201/202.
+// Cola de 1: si llega otro antes de enviar, el nuevo reemplaza al anterior.
+struct EventoPendiente {
+  bool pendiente = false;
+  uint8_t dia = 0;
+  uint8_t slot = 0;
+  uint8_t hora = 0;
+  uint8_t minuto = 0;
+  char fecha[11] = "";  // "DD/MM/AAAA" del RTC al momento del disparo
+};
+EventoPendiente eventoPendiente;
+
 // Marca ya-disparada en memoria: cada celda dispara una sola vez por día.
 // Se libera al cambiar de día (ver verificarAlarmas).
 bool yaDisparo[7][3] = {{false}};
@@ -294,20 +307,235 @@ void verificarAlarmas() {
 }
 
 // ------------------------------------------------- T4: WiFi + servidor
-// Reconexión no bloqueante + GET /alarmas periódico y POST /eventos.
-// Si no hay WiFi, el equipo sigue con lo guardado en NVS. Lógica completa en T4.
-void atenderWiFi() {
-  if (WiFi.status() == WL_CONNECTED) {
+// Contrato JSON esperado (el formato exacto del back vive en el front,
+// Modelos/Alarma.cs: lista de {diaSemana 1-7, numeroAlarma 1-3, hora "HH:mm:ss"}).
+//   GET BACKEND_URL + BACKEND_ALARMS_PATH -> 200 con lista JSON.
+//     Formato real del back (.NET): [
+//       {"alarmaId":2,"diaSemana":2,"numeroAlarma":1,"hora":"08:00:00"} ]
+//       diaSemana 1-7 (1 = lunes, 7 = domingo), numeroAlarma 1-3.
+//       Toda alarma listada se toma como habilitada (el back no trae flag).
+//       Conversión: dia = diaSemana % 7 (7 -> domingo 0), slot = numero - 1.
+//     Formato simple alternativo (mismo de la consigna T4): [
+//       {"dia":3,"slot":1,"hora":7,"minuto":30,"habilitada":1} ]
+//       dia 0-6 (0 = domingo, igual que DayOfWeek), slot 0-2,
+//       hora 0-23, minuto 0-59, habilitada 0/1 (si falta, se asume 1).
+//   POST BACKEND_URL + BACKEND_EVENT_PATH con
+//     {"dia":3,"slot":1,"hora":7,"minuto":30,"fecha":"01/10/2026"}
+//     fecha en formato DD/MM/AAAA tomado del RTC. Espera 200/201/202.
+// Parseo manual mínimo (sin ArduinoJson): el núcleo ESP32 estándar no la
+// incluye y así no se suma ninguna dependencia nueva.
+// Regla offline: errores HTTP o JSON se informan por Serial y la NVS
+// queda intacta; lo ausente en el GET no borra celdas locales.
+unsigned long ultimaDescargaAlarmasms = 0;  // último GET (exitoso o no)
+
+// Busca "clave" : número dentro de un objeto JSON plano.
+// Acepta 123, "123" y true/false (valen 1/0). Devuelve false si no está.
+bool extraerEnteroJson(const String& obj, const char* clave, int& valor) {
+  String patron = String("\"") + clave + "\"";
+  int i = obj.indexOf(patron);
+  if (i < 0) return false;
+  i = obj.indexOf(':', i + patron.length());
+  if (i < 0) return false;
+  i++;
+  while (i < (int)obj.length() && (obj[i] == ' ' || obj[i] == '\t' || obj[i] == '"')) i++;
+  if (obj.indexOf("true", i) == i) { valor = 1; return true; }
+  if (obj.indexOf("false", i) == i) { valor = 0; return true; }
+  int signo = 1;
+  if (i < (int)obj.length() && obj[i] == '-') { signo = -1; i++; }
+  if (i >= (int)obj.length() || !isDigit(obj[i])) return false;
+  long v = 0;
+  while (i < (int)obj.length() && isDigit(obj[i])) { v = v * 10 + (obj[i] - '0'); i++; }
+  valor = (int)(signo * v);
+  return true;
+}
+
+// Busca "clave" : "texto" dentro de un objeto JSON plano.
+bool extraerTextoJson(const String& obj, const char* clave, char* salida, size_t largo) {
+  String patron = String("\"") + clave + "\"";
+  int i = obj.indexOf(patron);
+  if (i < 0) return false;
+  i = obj.indexOf(':', i + patron.length());
+  if (i < 0) return false;
+  i++;
+  while (i < (int)obj.length() && (obj[i] == ' ' || obj[i] == '\t')) i++;
+  if (i >= (int)obj.length() || obj[i] != '"') return false;
+  i++;
+  int fin = obj.indexOf('"', i);
+  if (fin < 0) return false;
+  obj.substring(i, fin).toCharArray(salida, largo);
+  return true;
+}
+
+// Parte "HH:mm:ss" (o "HH:mm") en hora y minuto. Devuelve false si no encaja.
+bool partirHoraTexto(const char* texto, int& hh, int& mm) {
+  int h = -1, m = -1;
+  if (sscanf(texto, "%d:%d", &h, &m) != 2) return false;
+  hh = h;
+  mm = m;
+  return true;
+}
+
+// Guarda en NVS lo válido del cuerpo del GET. Cada objeto admite ambos
+// formatos del contrato; lo inválido se cuenta e ignora sin tocar la NVS.
+// Las celdas ausentes en la respuesta se dejan como están (no se borran).
+void aplicarAlarmasDesdeJson(const String& cuerpo) {
+  int pos = 0, validas = 0, ignoradas = 0;
+  while (true) {
+    int ini = cuerpo.indexOf('{', pos);
+    if (ini < 0) break;
+    int fin = cuerpo.indexOf('}', ini + 1);  // objetos planos, sin anidar
+    if (fin < 0) {
+      Serial.println(F("[mediclock] GET alarmas: JSON truncado, NVS intacta"));
+      break;
+    }
+    String obj = cuerpo.substring(ini, fin + 1);
+    pos = fin + 1;
+    int dia = -1, slot = -1, hh = -1, mm = -1, v = 0;
+    // Día: formato back (1-7) o simple (0-6).
+    if (extraerEnteroJson(obj, "diaSemana", v)) {
+      if (v < 1 || v > 7) { ignoradas++; continue; }
+      dia = v % 7;  // 1-6 igual, 7 (domingo) -> 0
+    } else if (extraerEnteroJson(obj, "dia", v)) {
+      if (v < 0 || v > 6) { ignoradas++; continue; }
+      dia = v;
+    }
+    // Slot: formato back (1-3) o simple (0-2).
+    if (extraerEnteroJson(obj, "numeroAlarma", v)) slot = v - 1;
+    else if (extraerEnteroJson(obj, "slot", v)) slot = v;
+    // Hora: número directo o texto "HH:mm:ss" del back.
+    int hTexto = -1, mTexto = -1;
+    bool horaEsTexto = false;
+    if (extraerEnteroJson(obj, "hora", v)) {
+      hh = v;
+    } else {
+      char th[16];
+      if (extraerTextoJson(obj, "hora", th, sizeof(th)) &&
+          partirHoraTexto(th, hTexto, mTexto)) {
+        horaEsTexto = true;
+      }
+    }
+    if (extraerEnteroJson(obj, "minuto", v)) mm = v;
+    else if (horaEsTexto) mm = mTexto;
+    if (horaEsTexto && hh < 0) hh = hTexto;
+    // Habilitada: si falta se asume 1 (el back lista solo las vigentes).
+    int e = 1;
+    if (extraerEnteroJson(obj, "habilitada", v)) e = v;
+    else if (extraerEnteroJson(obj, "e", v)) e = v;
+    if (dia < 0 || slot < 0 || slot > 2 || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      ignoradas++;
+      continue;
+    }
+    if (guardarAlarmaLocal((uint8_t)dia, (uint8_t)slot, (uint8_t)hh, (uint8_t)mm, e != 0)) {
+      validas++;
+    } else {
+      ignoradas++;
+    }
+  }
+  Serial.printf("[mediclock] alarmas del back: %d guardadas, %d ignoradas\n", validas, ignoradas);
+}
+
+// Pide la lista al back cuando es su turno. Sin WiFi no hace nada:
+// el equipo sigue con NVS + RTC. Timeout corto, sin delay().
+void descargarAlarmasSiToca() {
+  if (WiFi.status() != WL_CONNECTED) {
     return;
   }
   unsigned long ahora = millis();
-  if (ahora - ultimoReintentoWiFims < WIFI_RETRY_INTERVAL_MS) {
+  if (ultimaDescargaAlarmasms != 0 && ahora - ultimaDescargaAlarmasms < ALARMS_FETCH_INTERVAL_MS) {
     return;
   }
-  ultimoReintentoWiFims = ahora;
-  // TODO(T4): WiFi.begin(WIFI_SSID, WIFI_PASSWORD) sin bloquear;
-  // al conectar: GET BACKEND_URL + BACKEND_ALARMS_PATH -> NVS (cada
-  // ALARMS_FETCH_INTERVAL_MS) y POST de eventos a BACKEND_EVENT_PATH.
+  ultimaDescargaAlarmasms = ahora;  // se anota antes: un fallo también espera su turno
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  String url = String(BACKEND_URL) + BACKEND_ALARMS_PATH;
+  http.begin(url);
+  int codigo = http.GET();
+  if (codigo != HTTP_CODE_OK) {
+    Serial.printf("[mediclock] GET alarmas fallo: %d, NVS intacta\n", codigo);
+    http.end();
+    return;
+  }
+  String cuerpo = http.getString();
+  http.end();
+  if (cuerpo.length() == 0) {
+    Serial.println(F("[mediclock] GET alarmas: cuerpo vacio, NVS intacta"));
+    return;
+  }
+  aplicarAlarmasDesdeJson(cuerpo);
+}
+
+// ¿Hay un evento sin avisar? (la usa T5 para saber si quedó pendiente)
+bool hayEventoPendiente() {
+  return eventoPendiente.pendiente;
+}
+
+// Marca el evento como ya avisado. Solo se llama tras POST 200/201/202.
+void marcarEventoEnviado() {
+  eventoPendiente.pendiente = false;
+}
+
+// T5 la llama al dispensar (motor/buzzer o botón de pánico).
+// Guarda la fecha del RTC; sin hora válida anota "00/00/0000".
+void encolarEventoParaEnvio(uint8_t dia, uint8_t slot, uint8_t hora, uint8_t minuto) {
+  eventoPendiente.pendiente = true;
+  eventoPendiente.dia = dia;
+  eventoPendiente.slot = slot;
+  eventoPendiente.hora = hora;
+  eventoPendiente.minuto = minuto;
+  if (horaValida) {
+    snprintf(eventoPendiente.fecha, sizeof(eventoPendiente.fecha), "%02u/%02u/%04u",
+             tiempoCacheado.Day(), tiempoCacheado.Month(), tiempoCacheado.Year());
+  } else {
+    snprintf(eventoPendiente.fecha, sizeof(eventoPendiente.fecha), "00/00/0000");
+  }
+}
+
+// Envía el evento pendiente cuando hay WiFi. Si falla, queda pendiente
+// y se reintenta en el próximo turno, sin bloquear el bucle.
+void enviarEventoSiToca() {
+  if (!eventoPendiente.pendiente) {
+    return;  // nada que avisar
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    return;  // sin red se reintenta luego; el dato sigue en memoria
+  }
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  String url = String(BACKEND_URL) + BACKEND_EVENT_PATH;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  char cuerpo[96];
+  snprintf(cuerpo, sizeof(cuerpo),
+           "{\"dia\":%u,\"slot\":%u,\"hora\":%u,\"minuto\":%u,\"fecha\":\"%s\"}",
+           eventoPendiente.dia, eventoPendiente.slot,
+           eventoPendiente.hora, eventoPendiente.minuto,
+           eventoPendiente.fecha);
+  int codigo = http.POST(String(cuerpo));
+  http.end();
+  if (codigo == HTTP_CODE_OK || codigo == HTTP_CODE_CREATED || codigo == HTTP_CODE_ACCEPTED) {
+    marcarEventoEnviado();
+    Serial.println(F("[mediclock] evento avisado al back"));
+  } else {
+    Serial.printf("[mediclock] POST evento fallo: %d, reintenta luego\n", codigo);
+  }
+}
+
+// Reconexión no bloqueante + turnos de GET/POST.
+// Sin WiFi el equipo sigue con lo guardado en NVS (T3) y el RTC (T2).
+void atenderWiFi() {
+  if (WiFi.status() != WL_CONNECTED) {
+    unsigned long ahora = millis();
+    bool primerIntento = (ultimoReintentoWiFims == 0);
+    if (!primerIntento && ahora - ultimoReintentoWiFims < WIFI_RETRY_INTERVAL_MS) {
+      return;  // aún no es su turno; el resto sigue funcionando
+    }
+    ultimoReintentoWiFims = ahora;
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);  // no bloquea: vuelve de inmediato
+    Serial.println(F("[mediclock] WiFi conectando..."));
+    return;  // GET/POST recién cuando haya conexión, en próximos turnos
+  }
+  descargarAlarmasSiToca();  // cada ALARMS_FETCH_INTERVAL_MS
+  enviarEventoSiToca();      // si hay evento pendiente
 }
 
 // --------------------------- T5: actuadores (motor, buzzer, botones)
@@ -322,6 +550,11 @@ void actualizarActuadores() {
 // --------------------------------------------------------------- Arranque
 void setup() {
   Serial.begin(115200);
+
+  // Modo estación desde el arranque (no bloquea, no conecta solo).
+  // atenderWiFi() llama a WiFi.begin() en su turno con reintentos cada
+  // WIFI_RETRY_INTERVAL_MS; sin red el equipo sigue con NVS + RTC.
+  WiFi.mode(WIFI_STA);
 
   // GPIO34/35 son solo entrada y no tienen pull-up interno:
   // llevan pull-up externo de 10 k a 3,3 V y activan en LOW (a GND).

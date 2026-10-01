@@ -75,5 +75,6 @@
 #define NTP_REINTENTO_SIN_HORA_MS (30UL * 1000UL) // T2: reintento NTP sin hora válida
 #define WIFI_RETRY_INTERVAL_MS  10000  // T4: ventana de reintento WiFi sin bloquear
 #define ALARMS_FETCH_INTERVAL_MS (5UL * 60UL * 1000UL) // T4: GET /alarmas cada 5 min
+#define HTTP_TIMEOUT_MS         5000   // T4: tope de espera de GET/POST, sin bloquear
 
 #endif // MEDICLOCK_CONFIG_H
