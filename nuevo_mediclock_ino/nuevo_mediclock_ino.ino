@@ -39,6 +39,25 @@ bool rtcValido = false;
 bool horaValida = false;
 bool ntpConfigurado = false;  // configTime() se llama una sola vez en setup()
 
+// ------------------------------------------- T3: estado de alarmas en NVS
+// Aviso pendiente que T5 consume para mover el motor y sonar el buzzer.
+// verificarAlarmas() lo deja activo; T5 lo atiende y lo pone en false.
+struct AvisoAlarma {
+  bool activa = false;
+  uint8_t dia = 0;     // 0 = domingo, igual que DayOfWeek del RTC
+  uint8_t slot = 0;    // 0..2
+  uint8_t hora = 0;
+  uint8_t minuto = 0;
+};
+AvisoAlarma alarmaPendiente;
+
+// Marca ya-disparada en memoria: cada celda dispara una sola vez por día.
+// Se libera al cambiar de día (ver verificarAlarmas).
+bool yaDisparo[7][3] = {{false}};
+uint16_t diaMarcaAnio = 0;
+uint8_t diaMarcaMes = 0;
+uint8_t diaMarcaDia = 0;
+
 // ---------------------------------------------------------- Utilidades
 void apagarBuzzer() {
   ledcWrite(BUZZER_LEDC_CHANNEL, 0);
@@ -115,6 +134,9 @@ const char* DIAS_ES[7] = {"Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"};
 // Sin hora válida muestra "SIN HORA" hasta que llegue NTP.
 void mostrarReloj() {
   unsigned long ahora = millis();
+  if (alarmaPendiente.activa) {
+    return;  // el aviso "!ALARMA!" queda en pantalla hasta que T5 lo consuma
+  }
   if (ahora - ultimaPantallaRelojms < LCD_REFRESH_INTERVAL_MS) {
     return;
   }
@@ -150,10 +172,125 @@ void mostrarReloj() {
 }
 
 // ------------------------------ T3: planificador de alarmas (por ventana)
-// Cada alarma dispara una sola vez (marca ya-disparada en NVS). Lógica completa en T3.
+// Espacio NVS "mediclock" (ver prefs.begin en setup). Formato de claves:
+//   a{d}s{s}h : hora (0-23, UChar) · a{d}s{s}m : minuto (0-59, UChar)
+//   a{d}s{s}e : habilitada (bool). d = día 0-6 (0 = domingo, igual que
+//   DayOfWeek del RTC), s = slot 0-2. Ejemplo: "a3s1h" = hora del
+//   miércoles, slot 1. Clave "alarm_init" (bool): marca de NVS ya iniciado.
+// Sin EEPROM: solo Preferences (NVS).
+
+// Arma la clave NVS de una celda ("a3s1h"). buf necesita al menos 7 letras.
+void claveAlarma(uint8_t dia, uint8_t slot, char tipo, char* buf, size_t largo) {
+  snprintf(buf, largo, "a%us%u%c", dia, slot, tipo);
+}
+
+// Guarda una alarma con validación de rangos. Si algún dato está fuera
+// de rango devuelve false y no escribe nada.
+bool guardarAlarmaLocal(uint8_t dia, uint8_t slot, uint8_t hora, uint8_t minuto, bool habilitada) {
+  if (dia > 6 || slot > 2 || hora > 23 || minuto > 59) {
+    return false;
+  }
+  char clave[8];
+  claveAlarma(dia, slot, 'h', clave, sizeof(clave));
+  prefs.putUChar(clave, hora);
+  claveAlarma(dia, slot, 'm', clave, sizeof(clave));
+  prefs.putUChar(clave, minuto);
+  claveAlarma(dia, slot, 'e', clave, sizeof(clave));
+  prefs.putBool(clave, habilitada);
+  return true;
+}
+
+// Lee una alarma. Devuelve false con día/slot fuera de rango.
+// Si la celda nunca se escribió, entrega 0:00 deshabilitada.
+bool leerAlarmaLocal(uint8_t dia, uint8_t slot, uint8_t &hora, uint8_t &minuto, bool &habilitada) {
+  if (dia > 6 || slot > 2) {
+    return false;
+  }
+  char clave[8];
+  claveAlarma(dia, slot, 'h', clave, sizeof(clave));
+  hora = prefs.getUChar(clave, 0);
+  claveAlarma(dia, slot, 'm', clave, sizeof(clave));
+  minuto = prefs.getUChar(clave, 0);
+  claveAlarma(dia, slot, 'e', clave, sizeof(clave));
+  habilitada = prefs.getBool(clave, false);
+  return true;
+}
+
+// Primer arranque: si NVS no tiene la marca, crea las 21 celdas
+// deshabilitadas (0:00, sin horarios inventados) y deja la marca.
+void inicializarNVSsiVacio() {
+  if (prefs.isKey("alarm_init")) {
+    return;
+  }
+  for (uint8_t dia = 0; dia < 7; dia++) {
+    for (uint8_t slot = 0; slot < 3; slot++) {
+      guardarAlarmaLocal(dia, slot, 0, 0, false);
+    }
+  }
+  prefs.putBool("alarm_init", true);
+}
+
+// Muestra el aviso como hacía el original ("!ALARMA!").
+// No bloquea: solo escribe y vuelve; mostrarReloj() lo respeta
+// mientras alarmaPendiente siga activa (la consume T5).
+void mostrarAlarmaEnLCD(uint8_t dia, uint8_t slot, uint8_t hora, uint8_t minuto) {
+  char linea[17];
+  snprintf(linea, sizeof(linea), "%-16s", "!ALARMA!");
+  lcd.setCursor(0, 0);
+  lcd.print(linea);
+  snprintf(linea, sizeof(linea), "D%u S%u %02u:%02u", dia, slot, hora, minuto);
+  char linea2[17];
+  snprintf(linea2, sizeof(linea2), "%-16s", linea);
+  lcd.setCursor(0, 1);
+  lcd.print(linea2);
+}
+
+// Revisa las 3 alarmas del día actual contra la ventana [hh:mm] del
+// minuto en curso. Sin hora válida no dispara nada. Cada celda dispara
+// una sola vez por día (marca yaDisparo, liberada al cambiar de día);
+// dentro del minuto las pasadas repetidas del loop no re-disparan.
+// Al disparar deja alarmaPendiente para T5 y avisa en el LCD.
 void verificarAlarmas() {
-  // TODO(T3): leer alarmas desde NVS, comparar ventana [hh:mm] (nunca con s == 0),
-  // marcar disparada y llamar a la rutina de dispenser en T5.
+  if (!horaValida) {
+    return;  // RTC caído y sin NTP: no se confía en la hora
+  }
+  // Cambio de día: se liberan las marcas para disparar de nuevo.
+  uint16_t anio = tiempoCacheado.Year();
+  uint8_t mes = tiempoCacheado.Month();
+  uint8_t hoy = tiempoCacheado.Day();
+  if (anio != diaMarcaAnio || mes != diaMarcaMes || hoy != diaMarcaDia) {
+    memset(yaDisparo, 0, sizeof(yaDisparo));
+    diaMarcaAnio = anio;
+    diaMarcaMes = mes;
+    diaMarcaDia = hoy;
+  }
+  uint8_t dia = tiempoCacheado.DayOfWeek() % 7;
+  uint8_t hh = tiempoCacheado.Hour();
+  uint8_t mm = tiempoCacheado.Minute();
+  for (uint8_t slot = 0; slot < 3; slot++) {
+    if (yaDisparo[dia][slot]) {
+      continue;  // esta celda ya disparó hoy
+    }
+    uint8_t ah = 0, am = 0;
+    bool hab = false;
+    if (!leerAlarmaLocal(dia, slot, ah, am, hab) || !hab) {
+      continue;
+    }
+    // Ventana del minuto actual [hh:mm]: dispara en cualquier segundo
+    // del minuto, nunca con s == 0 (ese era el error del original).
+    if (ah == hh && am == mm) {
+      yaDisparo[dia][slot] = true;
+      if (!alarmaPendiente.activa) {
+        alarmaPendiente.activa = true;
+        alarmaPendiente.dia = dia;
+        alarmaPendiente.slot = slot;
+        alarmaPendiente.hora = ah;
+        alarmaPendiente.minuto = am;
+      }
+      mostrarAlarmaEnLCD(dia, slot, ah, am);
+      Serial.printf("[mediclock] alarma d%u s%u %02u:%02u\n", dia, slot, ah, am);
+    }
+  }
 }
 
 // ------------------------------------------------- T4: WiFi + servidor
@@ -225,6 +362,7 @@ void setup() {
 
   stepper.setSpeed(12);  // rpm; el giro real sigue por pasos no bloqueantes en T5
   prefs.begin("mediclock", false);
+  inicializarNVSsiVacio();  // T3: primer arranque deja las 21 celdas deshabilitadas
 
   Serial.println(F("[mediclock] setup done"));
 }
