@@ -318,7 +318,7 @@ void verificarAlarmas() {
 
 // ------------------------------------------------- T4: WiFi + servidor
 // Contrato JSON esperado (el formato exacto del back vive en el front,
-// Modelos/Alarma.cs: lista de {diaSemana 1-7, numeroAlarma 1-3, hora "HH:mm:ss"}).
+// FrontMediclock/Modelos/Alarma.cs: lista de {diaSemana 1-7, numeroAlarma 1-3, hora "HH:mm:ss"}).
 //   GET BACKEND_URL + BACKEND_ALARMS_PATH -> 200 con lista JSON.
 //     Formato real del back (.NET): [
 //       {"alarmaId":2,"diaSemana":2,"numeroAlarma":1,"hora":"08:00:00"} ]

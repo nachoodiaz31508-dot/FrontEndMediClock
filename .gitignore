@@ -482,3 +482,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# tooling local (orquestador e IDE)
+.atl/
+.theia/
