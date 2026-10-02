@@ -48,6 +48,7 @@ Son muchos cambios transversales (pines, NVS, NTP+RTC, WiFi HTTP, scheduler sin 
 - Running: ~1100 líneas. Chain strategy: pendiente (solo si se pide PR).
 
 ## Progreso
+- Reorg `75a945b` en `feature/reorganizar-repo`: front movido a `FrontMediclock/`, ino al lado en raíz, refs actualizadas, build verde 0 errores, `.atl/` y `.theia/` ignorados.
 - 2026-09-30: T1 done en `814359b` — scaffold 3 archivos, 361 inserciones, sin delay/Menu/EEPROM reales, arduino-cli pendiente (no instalado en host). Next: T2 tiempo.
 - 2026-09-30: T1-ES pasada a español didáctico (renombres tiempoCacheado/apagarBuzzer, comentarios y README en español neutro, pines e intervalos intactos, solo placeholders).
 - 2026-09-30: T2 done sin commit — leerTiempo() con cache 1s + validación IsDateTimeValid/LastError/rango (rtcValido/horaValida), sincronizarNTP() con configTime() una vez en setup + getLocalTime con reintento 30 s sin hora / 6 h con hora + SetDateTime al RTC, mostrarReloj() en LCD ("Mie 07:30"/fecha, "SIN HORA", "SYNC" 2 s), config.h +3 defines sin tocar pines, solo time.h estándar. Verificado por readback (sin delay/Menu/EEPROM reales, placeholders intactos); arduino-cli ausente, compilación pendiente en equipo preparado. Next: T3 NVS+scheduler.
