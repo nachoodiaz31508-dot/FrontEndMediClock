@@ -415,13 +415,13 @@ void aplicarAlarmasDesdeJson(const String& cuerpo) {
     // Hora: número directo o texto "HH:mm:ss" del back.
     int hTexto = -1, mTexto = -1;
     bool horaEsTexto = false;
-    if (extraerEnteroJson(obj, "hora", v)) {
-      hh = v;
-    } else {
+    {
       char th[16];
       if (extraerTextoJson(obj, "hora", th, sizeof(th)) &&
           partirHoraTexto(th, hTexto, mTexto)) {
         horaEsTexto = true;
+      } else if (extraerEnteroJson(obj, "hora", v)) {
+        hh = v;
       }
     }
     if (extraerEnteroJson(obj, "minuto", v)) mm = v;
