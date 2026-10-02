@@ -90,7 +90,7 @@ Los valores reales de URL y clave WiFi **nunca** se guardan en el repo: en
 Cada placa se configura antes de cargarla, sin commitear.
 
 **GET** `BACKEND_URL + BACKEND_ALARMS_PATH` → `200` con lista JSON.
-Formato real del back (.NET, ver `Modelos/Alarma.cs` del front):
+Formato real del back (.NET, ver `FrontMediclock/Modelos/Alarma.cs` del front):
 
 ```json
 [
