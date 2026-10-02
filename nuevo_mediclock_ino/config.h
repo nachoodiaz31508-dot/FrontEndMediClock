@@ -49,7 +49,7 @@
 // ---------------------------------------------------------------- Salidas
 #define PIN_LED            23   // LED de estado, activo en HIGH
 #define PIN_BUZZER         26   // buzzer pasivo por PWM (LEDC)
-#define BUZZER_LEDC_CHANNEL 0
+#define BUZZER_LEDC_CHANNEL 0  // sin uso en núcleo v3.x (canal automático)
 #define BUZZER_LEDC_FREQ_HZ 2000
 #define BUZZER_LEDC_RES_BITS 8
 

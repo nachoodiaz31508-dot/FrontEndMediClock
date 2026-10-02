@@ -76,8 +76,9 @@ uint8_t diaMarcaMes = 0;
 uint8_t diaMarcaDia = 0;
 
 // ---------------------------------------------------------- Utilidades
+// Núcleo ESP32 v3.x: ledcAttach() asigna el canal solo; ledcWrite() va por pin.
 void apagarBuzzer() {
-  ledcWrite(BUZZER_LEDC_CHANNEL, 0);
+  ledcWrite(PIN_BUZZER, 0);
 }
 
 // ------------------------------------------ T2: hora (RTC en memoria + NTP)
@@ -101,7 +102,9 @@ void leerTiempo() {
   }
   ultimaLecturaRTCms = ahora;
   RtcDateTime lectura = rtc.GetDateTime();
-  if (!rtc.IsDateTimeValid() || rtc.LastError() != 0 || !esFechaPosible(lectura)) {
+  // El DS1302 (Makuna) no expone LastError(): se valida con
+  // IsDateTimeValid() (oscilador) más rango de calendario.
+  if (!rtc.IsDateTimeValid() || !esFechaPosible(lectura)) {
     rtcValido = false;
     horaValida = false;
     return;
@@ -570,7 +573,7 @@ unsigned long ultimoRebotePanicoms = 0;  // último cambio de la lectura cruda
 
 // Enciende el buzzer pasivo por LEDC (el apagado usa apagarBuzzer()).
 void encenderBuzzer() {
-  ledcWrite(BUZZER_LEDC_CHANNEL, BUZZER_DUTY);
+  ledcWrite(PIN_BUZZER, BUZZER_DUTY);
 }
 
 // Patrón intermitente no bloqueante: cada BUZZER_PARPADEO_MS cambia de
@@ -768,8 +771,8 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
 
-  ledcSetup(BUZZER_LEDC_CHANNEL, BUZZER_LEDC_FREQ_HZ, BUZZER_LEDC_RES_BITS);
-  ledcAttachPin(PIN_BUZZER, BUZZER_LEDC_CHANNEL);
+  // Buzzer por LEDC (núcleo v3.x: canal automático por pin).
+  ledcAttach(PIN_BUZZER, BUZZER_LEDC_FREQ_HZ, BUZZER_LEDC_RES_BITS);
   apagarBuzzer();
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
@@ -790,7 +793,7 @@ void setup() {
   // y sincronizarNTP() la traerá cuando haya WiFi.
   ultimaLecturaRTCms = millis();
   tiempoCacheado = rtc.GetDateTime();
-  if (!rtc.IsDateTimeValid() || rtc.LastError() != 0 || !esFechaPosible(tiempoCacheado)) {
+  if (!rtc.IsDateTimeValid() || !esFechaPosible(tiempoCacheado)) {
     rtcValido = false;
     horaValida = false;
   } else {
