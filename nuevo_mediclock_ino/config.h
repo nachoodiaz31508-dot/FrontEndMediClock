@@ -60,6 +60,7 @@
 #define BACKEND_URL        "https://mediclockbackend.runasp.net/api/dispositivos/1"
 #define BACKEND_ALARMS_PATH "/alarmas"
 #define BACKEND_EVENT_PATH  "/eventos"
+#define DISPOSITIVO_ID     1  // igual al id de la URL de arriba
 
 // ------------------------------------------------------------------- NTP
 // América/Argentina/Buenos_Aires (UTC-3, sin horario de verano).

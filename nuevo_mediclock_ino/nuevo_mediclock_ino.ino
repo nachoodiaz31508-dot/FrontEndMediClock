@@ -329,9 +329,12 @@ void verificarAlarmas() {
 //       {"dia":3,"slot":1,"hora":7,"minuto":30,"habilitada":1} ]
 //       dia 0-6 (0 = domingo, igual que DayOfWeek), slot 0-2,
 //       hora 0-23, minuto 0-59, habilitada 0/1 (si falta, se asume 1).
-//   POST BACKEND_URL + BACKEND_EVENT_PATH con
-//     {"dia":3,"slot":1,"hora":7,"minuto":30,"fecha":"01/10/2026"}
-//     fecha en formato DD/MM/AAAA tomado del RTC. Espera 200/201/202.
+//   POST BACKEND_URL + BACKEND_EVENT_PATH con el modelo Evento del back:
+//     {"tipo":"DosisEntregada","descripcion":"Dosis entregada dia 3 turno 2",
+//      "dispositivoId":1,"alarmaId":null}
+//     tipo fijo "DosisEntregada", descripcion de 10-300 letras, dispositivoId
+//     igual al de la URL. fechaHora la asigna el servidor; alarmaId nulo
+//     hasta que el GET guarde el id real. Espera 200/201/202.
 // Parseo manual mínimo (sin ArduinoJson): el núcleo ESP32 estándar no la
 // incluye y así no se suma ninguna dependencia nueva.
 // Regla offline: errores HTTP o JSON se informan por Serial y la NVS
@@ -514,12 +517,15 @@ void enviarEventoSiToca() {
   String url = String(BACKEND_URL) + BACKEND_EVENT_PATH;
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
-  char cuerpo[96];
+  // Contrato Evento del back: tipo + descripcion (10-300) + dispositivoId.
+  // fechaHora la pone el servidor; alarmaId nulo por ahora.
+  char descripcion[64];
+  snprintf(descripcion, sizeof(descripcion), "Dosis entregada dia %u turno %u",
+           eventoPendiente.dia, eventoPendiente.slot + 1);
+  char cuerpo[192];
   snprintf(cuerpo, sizeof(cuerpo),
-           "{\"dia\":%u,\"slot\":%u,\"hora\":%u,\"minuto\":%u,\"fecha\":\"%s\"}",
-           eventoPendiente.dia, eventoPendiente.slot,
-           eventoPendiente.hora, eventoPendiente.minuto,
-           eventoPendiente.fecha);
+           "{\"tipo\":\"DosisEntregada\",\"descripcion\":\"%s\",\"dispositivoId\":%d,\"alarmaId\":null}",
+           descripcion, DISPOSITIVO_ID);
   int codigo = http.POST(String(cuerpo));
   http.end();
   if (codigo == HTTP_CODE_OK || codigo == HTTP_CODE_CREATED || codigo == HTTP_CODE_ACCEPTED) {
